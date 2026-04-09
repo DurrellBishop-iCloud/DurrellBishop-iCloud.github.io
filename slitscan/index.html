@@ -120,10 +120,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
     <div class="section-label">Time Buffer</div>
     <div class="setting-row" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;justify-content:space-between;margin-bottom:.25rem">
-        <span class="setting-label" id="buffer-label">72 frames</span>
-        <span class="setting-value" id="delay-label">~6.0s delay</span>
+        <span class="setting-label" id="buffer-label">80 frames</span>
+        <span class="setting-value" id="delay-label">~1.3s delay</span>
       </div>
-      <input type="range" id="buffer-slider" min="12" max="180" step="6" value="72">
+      <input type="range" id="buffer-slider" min="12" max="180" step="6" value="80">
     </div>
     <p class="info-text">More frames create a longer time span. The maximum buffer depends on slit width so the full time band still fits on screen.</p>
   </div>
@@ -132,17 +132,17 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
     <div class="section-label">Render</div>
     <div class="setting-row" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;justify-content:space-between;margin-bottom:.25rem">
-        <span class="setting-label" id="fps-label">12 fps target</span>
+        <span class="setting-label" id="fps-label">60 fps target</span>
         <span class="setting-value">capture rate</span>
       </div>
-      <input type="range" id="fps-slider" min="6" max="60" step="1" value="12">
+      <input type="range" id="fps-slider" min="6" max="60" step="1" value="60">
     </div>
     <div class="setting-row" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;justify-content:space-between;margin-bottom:.25rem">
-        <span class="setting-label" id="slit-width-label">5 px slit width</span>
+        <span class="setting-label" id="slit-width-label">1 px slit width</span>
         <span class="setting-value">band density</span>
       </div>
-      <input type="range" id="slit-width-slider" min="1" max="16" step="1" value="5">
+      <input type="range" id="slit-width-slider" min="1" max="16" step="1" value="1">
     </div>
     <p class="info-text">The centered time band is built from buffered slits. Vertical mode runs oldest-to-newest from left to right. Horizontal mode runs oldest-to-newest from top to bottom.</p>
   </div>
@@ -156,11 +156,11 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 const CFG = {
   processWidth: 320,
   minFPS: 6,
-  defaultFPS: 12,
+  defaultFPS: 60,
   maxFPS: 60,
   maxBuffer: 180,
-  defaultBuffer: 72,
-  defaultSlitWidth: 5,
+  defaultBuffer: 80,
+  defaultSlitWidth: 1,
   maxSlitWidth: 16,
 };
 
