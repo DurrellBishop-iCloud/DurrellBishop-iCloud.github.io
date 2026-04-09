@@ -31,6 +31,7 @@ html,body{width:100%;height:100%;background:#000;overflow:hidden;
 #settings.open{transform:translateY(0)}
 
 .settings-handle{width:36px;height:4px;background:#666;border-radius:2px;margin:0 auto 1rem}
+.settings-version{font-size:.68rem;color:#636366;text-align:center;margin:-.35rem 0 1rem}
 
 .settings-section{margin-bottom:1.25rem}
 .settings-section:last-child{margin-bottom:0}
@@ -60,7 +61,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
   font-size:.8rem;color:#aaa;z-index:10;animation:fadeHint 3s 2s forwards}
 @keyframes fadeHint{to{opacity:0;pointer-events:none}}
 
-#version{position:fixed;bottom:4px;right:8px;font-size:.6rem;color:#333;z-index:5}
 </style>
 </head>
 <body>
@@ -75,10 +75,10 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 </div>
 
 <div id="tap-hint">Tap for settings</div>
-<div id="version">v1.2.0</div>
 
 <div id="settings">
   <div class="settings-handle"></div>
+  <div class="settings-version" id="settings-version">v1.2.1</div>
 
   <div class="settings-section">
     <div class="section-label">Display</div>
@@ -150,7 +150,7 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 
 <script>
 // =============================================================
-// Time Slitscan — WebGPU  v1.2.0
+// Time Slitscan — WebGPU  v1.2.1
 // =============================================================
 
 const CFG = {
