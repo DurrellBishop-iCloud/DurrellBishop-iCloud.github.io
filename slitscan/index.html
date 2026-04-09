@@ -85,10 +85,26 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 </div>
 
 <div id="tap-hint">Tap for settings</div>
-<div id="version">v1.0.0</div>
+<div id="version">v1.1.0</div>
 
 <div id="settings">
   <div class="settings-handle"></div>
+
+  <div class="settings-section">
+    <div class="section-label">Display</div>
+    <div class="setting-row">
+      <span class="setting-label">Achieved FPS</span>
+      <span class="setting-value" id="achieved-fps-label">--</span>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">Buffered Frames</span>
+      <span class="setting-value" id="display-buffer-label">0</span>
+    </div>
+    <div class="setting-row">
+      <span class="setting-label">Time Band</span>
+      <span class="setting-value" id="band-width-label">0 px</span>
+    </div>
+  </div>
 
   <div class="settings-section">
     <div class="section-label">Camera</div>
@@ -103,29 +119,47 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
     <div class="setting-row" style="flex-direction:column;align-items:stretch">
       <div style="display:flex;justify-content:space-between;margin-bottom:.25rem">
         <span class="setting-label" id="buffer-label">72 frames</span>
-        <span class="setting-value" id="delay-label">~5.9s delay</span>
+        <span class="setting-value" id="delay-label">~6.0s delay</span>
       </div>
       <input type="range" id="buffer-slider" min="12" max="180" step="6" value="72">
     </div>
-    <p class="info-text">Captures ~12 frames/sec at 320px width. More frames = longer time gap but more memory.</p>
+    <p class="info-text">More frames create a longer time span. The maximum buffer depends on slit width so the full time band still fits on screen.</p>
   </div>
 
   <div class="settings-section">
-    <div class="section-label">Effect</div>
-    <p class="info-text">Left half shows the oldest buffered frame. Right half shows the live camera feed. The white line marks the time boundary.</p>
+    <div class="section-label">Render</div>
+    <div class="setting-row" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;justify-content:space-between;margin-bottom:.25rem">
+        <span class="setting-label" id="fps-label">12 fps target</span>
+        <span class="setting-value">capture rate</span>
+      </div>
+      <input type="range" id="fps-slider" min="6" max="60" step="1" value="12">
+    </div>
+    <div class="setting-row" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;justify-content:space-between;margin-bottom:.25rem">
+        <span class="setting-label" id="slit-width-label">5 px slit width</span>
+        <span class="setting-value">band density</span>
+      </div>
+      <input type="range" id="slit-width-slider" min="1" max="16" step="1" value="5">
+    </div>
+    <p class="info-text">Left half uses the oldest buffered frame, right half uses the newest frame, and the centered time band is built from buffered slits from oldest on the left to newest on the right.</p>
   </div>
 </div>
 
 <script>
 // =============================================================
-// Time Slitscan — WebGPU  v1.0.0
+// Time Slitscan — WebGPU  v1.1.0
 // =============================================================
 
 const CFG = {
   processWidth: 320,
-  targetFPS: 12,
+  minFPS: 6,
+  defaultFPS: 12,
+  maxFPS: 60,
   maxBuffer: 180,
   defaultBuffer: 72,
+  defaultSlitWidth: 5,
+  maxSlitWidth: 16,
 };
 
 // ---- state ----
@@ -133,8 +167,10 @@ let device, ctx, pipeline, bindGroup, uniformBuf, texArray, texSampler;
 let offscreen, offCtx, video;
 let texW = CFG.processWidth, texH = 240;
 let bufferSize = CFG.defaultBuffer;
+let targetFPS = CFG.defaultFPS;
+let slitWidth = CFG.defaultSlitWidth;
 let head = 0, count = 0, oldestI = 0, newestI = 0;
-let lastCapture = 0, fpsFrames = 0, fpsLast = 0;
+let lastCapture = 0, fpsFrames = 0, fpsLast = 0, achievedFPS = 0;
 let settingsOpen = false, ready = false;
 let isFrontCamera = true;
 
@@ -143,8 +179,9 @@ const WGSL = `
 struct V { @builtin(position) p: vec4f, @location(0) uv: vec2f };
 
 struct P {
-  oldest: i32, newest: i32, cnt: i32, _p: i32,
-  vidW: f32, vidH: f32, canW: f32, canH: f32,
+  oldest: i32, newest: i32, cnt: i32, cap: i32,
+  slitW: f32, vidW: f32, vidH: f32, canW: f32,
+  canH: f32, _pad0: f32, _pad1: f32, _pad2: f32,
 };
 
 @vertex fn vs(@builtin(vertex_index) i: u32) -> V {
@@ -159,6 +196,10 @@ struct P {
 @group(0) @binding(0) var tex: texture_2d_array<f32>;
 @group(0) @binding(1) var sm: sampler;
 @group(0) @binding(2) var<uniform> p: P;
+
+fn ringIndex(oldest: i32, cap: i32, offset: i32) -> i32 {
+  return (oldest + offset) % cap;
+}
 
 @fragment fn fs(v: V) -> @location(0) vec4f {
   let va = p.vidW / p.vidH;
@@ -177,23 +218,27 @@ struct P {
     return vec4f(0.0, 0.0, 0.0, 1.0);
   }
 
-  if (p.cnt < 2) {
+  if (p.cnt < 1) {
     return textureSampleLevel(tex, sm, uv, p.newest, 0.0);
   }
 
-  var c: vec4f;
-  if (uv.x < 0.5) {
-    c = textureSampleLevel(tex, sm, uv, p.oldest, 0.0);
-  } else {
-    c = textureSampleLevel(tex, sm, uv, p.newest, 0.0);
+  let sourceX = uv.x * p.vidW;
+  let halfX = p.vidW * 0.5;
+  let bandWidth = f32(p.cnt) * p.slitW;
+  let bandStart = (p.vidW - bandWidth) * 0.5;
+  let bandEnd = bandStart + bandWidth;
+
+  var layer = p.newest;
+  if (sourceX < halfX) {
+    layer = p.oldest;
   }
 
-  // separator line
-  let lw = 1.5 / p.canW;
-  if (abs(uv.x - 0.5) < lw) {
-    c = mix(c, vec4f(1.0, 1.0, 1.0, 1.0), 0.9);
+  if (sourceX >= bandStart && sourceX < bandEnd) {
+    let slitIndex = clamp(i32(floor((sourceX - bandStart) / p.slitW)), 0, p.cnt - 1);
+    layer = ringIndex(p.oldest, p.cap, slitIndex);
   }
-  return c;
+
+  return textureSampleLevel(tex, sm, uv, layer, 0.0);
 }
 `;
 
@@ -246,7 +291,7 @@ async function init() {
   texSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
 
   uniformBuf = device.createBuffer({
-    size: 32,
+    size: 48,
     usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
   });
 
@@ -273,9 +318,17 @@ async function init() {
   await enumerateCameras();
   setupUI(canvas);
 
-  // restore saved buffer
+  // restore saved settings
   const saved = localStorage.getItem('slitscan-buf');
-  if (saved) { bufferSize = parseInt(saved); document.getElementById('buffer-slider').value = bufferSize; }
+  if (saved) bufferSize = parseInt(saved, 10);
+  const savedFPS = localStorage.getItem('slitscan-fps');
+  if (savedFPS) targetFPS = parseInt(savedFPS, 10);
+  const savedSlitWidth = localStorage.getItem('slitscan-slit-width');
+  if (savedSlitWidth) slitWidth = parseInt(savedSlitWidth, 10);
+
+  document.getElementById('buffer-slider').value = bufferSize;
+  document.getElementById('fps-slider').value = targetFPS;
+  document.getElementById('slit-width-slider').value = slitWidth;
   updateLabels();
 
   ready = true;
@@ -288,7 +341,13 @@ async function init() {
 async function startCamera(deviceId) {
   if (video?.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
 
-  const c = { video: { width: { ideal: 640 }, height: { ideal: 480 } } };
+  const c = {
+    video: {
+      width: { ideal: 640 },
+      height: { ideal: 480 },
+      frameRate: { ideal: CFG.maxFPS, max: CFG.maxFPS },
+    }
+  };
   if (deviceId) c.video.deviceId = { exact: deviceId };
   else c.video.facingMode = 'user';
 
@@ -302,7 +361,7 @@ async function startCamera(deviceId) {
   const settings = track.getSettings();
   isFrontCamera = settings.facingMode === 'user' || settings.facingMode === 'environment' === false;
 
-  head = 0; count = 0;
+  head = 0; count = 0; achievedFPS = 0; fpsFrames = 0; fpsLast = 0; lastCapture = 0;
 }
 
 async function enumerateCameras() {
@@ -322,6 +381,8 @@ async function enumerateCameras() {
 // ---- capture ----
 function capture() {
   if (!video || video.readyState < 2) return;
+
+  offCtx.clearRect(0, 0, texW, texH);
 
   offCtx.save();
   if (isFrontCamera) {
@@ -350,25 +411,29 @@ function frame(now) {
   requestAnimationFrame(frame);
   if (!ready) return;
 
-  const interval = 1000 / CFG.targetFPS;
+  const interval = 1000 / targetFPS;
   if (now - lastCapture >= interval) { capture(); lastCapture = now; }
 
   // fps
+  if (!fpsLast) fpsLast = now;
   fpsFrames++;
   if (now - fpsLast >= 1000) {
-    document.getElementById('hud-fps').textContent = fpsFrames + ' fps';
+    achievedFPS = (fpsFrames * 1000) / (now - fpsLast);
+    document.getElementById('hud-fps').textContent = achievedFPS.toFixed(1) + ' fps';
+    document.getElementById('achieved-fps-label').textContent = achievedFPS.toFixed(1);
     fpsFrames = 0; fpsLast = now;
   }
 
-  const delay = Math.max(count - 1, 0) / CFG.targetFPS;
+  const delay = count / Math.max(targetFPS, 1);
   document.getElementById('hud-delay').textContent = delay.toFixed(1) + 's delay';
+  document.getElementById('display-buffer-label').textContent = String(count);
 
   if (!count) return;
 
   // uniforms
-  const buf = new ArrayBuffer(32);
-  new Int32Array(buf, 0, 4).set([oldestI, newestI, count, 0]);
-  new Float32Array(buf, 16, 4).set([texW, texH, ctx.canvas.width, ctx.canvas.height]);
+  const buf = new ArrayBuffer(48);
+  new Int32Array(buf, 0, 4).set([oldestI, newestI, count, bufferSize]);
+  new Float32Array(buf, 16, 5).set([slitWidth, texW, texH, ctx.canvas.width, ctx.canvas.height]);
   device.queue.writeBuffer(uniformBuf, 0, buf);
 
   const enc = device.createCommandEncoder();
@@ -394,10 +459,31 @@ function setupUI(canvas) {
   panel.addEventListener('click', e => e.stopPropagation());
 
   document.getElementById('buffer-slider').addEventListener('input', e => {
-    bufferSize = parseInt(e.target.value);
+    bufferSize = parseInt(e.target.value, 10);
     head = 0; count = 0;
     updateLabels();
     localStorage.setItem('slitscan-buf', bufferSize);
+  });
+
+  document.getElementById('fps-slider').addEventListener('input', e => {
+    targetFPS = parseInt(e.target.value, 10);
+    head = 0;
+    count = 0;
+    fpsFrames = 0;
+    fpsLast = 0;
+    achievedFPS = 0;
+    document.getElementById('achieved-fps-label').textContent = '--';
+    updateLabels();
+    localStorage.setItem('slitscan-fps', targetFPS);
+  });
+
+  document.getElementById('slit-width-slider').addEventListener('input', e => {
+    slitWidth = parseInt(e.target.value, 10);
+    clampBufferSize();
+    head = 0;
+    count = 0;
+    updateLabels();
+    localStorage.setItem('slitscan-slit-width', slitWidth);
   });
 
   document.getElementById('camera-select').addEventListener('change', async e => {
@@ -417,9 +503,26 @@ function setupUI(canvas) {
 }
 
 function updateLabels() {
+  clampBufferSize();
   document.getElementById('buffer-label').textContent = bufferSize + ' frames';
-  const d = Math.max(bufferSize - 1, 0) / CFG.targetFPS;
+  const d = bufferSize / Math.max(targetFPS, 1);
   document.getElementById('delay-label').textContent = '~' + d.toFixed(1) + 's delay';
+  document.getElementById('fps-label').textContent = targetFPS + ' fps target';
+  document.getElementById('slit-width-label').textContent = slitWidth + ' px slit width';
+  document.getElementById('band-width-label').textContent = (bufferSize * slitWidth) + ' px';
+}
+
+function clampBufferSize() {
+  const bufferSlider = document.getElementById('buffer-slider');
+  const maxBufferForWidth = Math.max(12, Math.min(CFG.maxBuffer, Math.floor(CFG.processWidth / Math.max(slitWidth, 1))));
+  bufferSlider.max = String(maxBufferForWidth);
+  bufferSlider.step = String(Math.max(1, Math.min(6, slitWidth)));
+
+  if (bufferSize > maxBufferForWidth) {
+    bufferSize = maxBufferForWidth;
+  }
+
+  bufferSlider.value = String(bufferSize);
 }
 
 function showError(title, msg) {
