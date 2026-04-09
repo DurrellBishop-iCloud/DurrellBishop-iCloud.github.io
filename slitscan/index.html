@@ -54,11 +54,6 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
 
 .info-text{font-size:.75rem;color:#636366;line-height:1.4;margin-top:.5rem}
 
-#hud{position:fixed;top:env(safe-area-inset-top,12px);left:0;right:0;
-  display:none;justify-content:space-between;padding:.75rem 1rem;pointer-events:none;z-index:10}
-.hud-badge{background:rgba(0,0,0,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
-  padding:.3rem .6rem;border-radius:6px;font-size:.75rem;font-variant-numeric:tabular-nums}
-
 #tap-hint{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 1rem);left:50%;
   transform:translateX(-50%);background:rgba(0,0,0,.5);backdrop-filter:blur(10px);
   -webkit-backdrop-filter:blur(10px);padding:.4rem 1rem;border-radius:20px;
@@ -79,13 +74,8 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
   <p id="error-msg"></p>
 </div>
 
-<div id="hud">
-  <span class="hud-badge" id="hud-delay">0.0s delay</span>
-  <span class="hud-badge" id="hud-fps">-- fps</span>
-</div>
-
 <div id="tap-hint">Tap for settings</div>
-<div id="version">v1.1.0</div>
+<div id="version">v1.2.0</div>
 
 <div id="settings">
   <div class="settings-handle"></div>
@@ -104,6 +94,18 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
       <span class="setting-label">Time Band</span>
       <span class="setting-value" id="band-width-label">0 px</span>
     </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-label">Orientation</div>
+    <div class="setting-row">
+      <span class="setting-label">Slit Direction</span>
+      <select id="orientation-select">
+        <option value="vertical">Vertical Slits</option>
+        <option value="horizontal">Horizontal Slits</option>
+      </select>
+    </div>
+    <p class="info-text">This switches the effect from vertical slits to horizontal slits. Vertical uses left and right halves. Horizontal uses top and bottom halves.</p>
   </div>
 
   <div class="settings-section">
@@ -142,13 +144,13 @@ input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;heigh
       </div>
       <input type="range" id="slit-width-slider" min="1" max="16" step="1" value="5">
     </div>
-    <p class="info-text">Left half uses the oldest buffered frame, right half uses the newest frame, and the centered time band is built from buffered slits from oldest on the left to newest on the right.</p>
+    <p class="info-text">The centered time band is built from buffered slits. Vertical mode runs oldest-to-newest from left to right. Horizontal mode runs oldest-to-newest from top to bottom.</p>
   </div>
 </div>
 
 <script>
 // =============================================================
-// Time Slitscan — WebGPU  v1.1.0
+// Time Slitscan — WebGPU  v1.2.0
 // =============================================================
 
 const CFG = {
@@ -169,6 +171,7 @@ let texW = CFG.processWidth, texH = 240;
 let bufferSize = CFG.defaultBuffer;
 let targetFPS = CFG.defaultFPS;
 let slitWidth = CFG.defaultSlitWidth;
+let orientationMode = 'vertical';
 let head = 0, count = 0, oldestI = 0, newestI = 0;
 let lastCapture = 0, fpsFrames = 0, fpsLast = 0, achievedFPS = 0;
 let settingsOpen = false, ready = false;
@@ -180,8 +183,8 @@ struct V { @builtin(position) p: vec4f, @location(0) uv: vec2f };
 
 struct P {
   oldest: i32, newest: i32, cnt: i32, cap: i32,
-  slitW: f32, vidW: f32, vidH: f32, canW: f32,
-  canH: f32, _pad0: f32, _pad1: f32, _pad2: f32,
+  slitW: f32, axis: f32, vidW: f32, vidH: f32,
+  canW: f32, canH: f32, _pad0: f32, _pad1: f32,
 };
 
 @vertex fn vs(@builtin(vertex_index) i: u32) -> V {
@@ -222,20 +225,38 @@ fn ringIndex(oldest: i32, cap: i32, offset: i32) -> i32 {
     return textureSampleLevel(tex, sm, uv, p.newest, 0.0);
   }
 
-  let sourceX = uv.x * p.vidW;
-  let halfX = p.vidW * 0.5;
-  let bandWidth = f32(p.cnt) * p.slitW;
-  let bandStart = (p.vidW - bandWidth) * 0.5;
-  let bandEnd = bandStart + bandWidth;
-
   var layer = p.newest;
-  if (sourceX < halfX) {
-    layer = p.oldest;
-  }
 
-  if (sourceX >= bandStart && sourceX < bandEnd) {
-    let slitIndex = clamp(i32(floor((sourceX - bandStart) / p.slitW)), 0, p.cnt - 1);
-    layer = ringIndex(p.oldest, p.cap, slitIndex);
+  if (p.axis < 0.5) {
+    let sourceX = uv.x * p.vidW;
+    let halfX = p.vidW * 0.5;
+    let bandWidth = f32(p.cnt) * p.slitW;
+    let bandStart = (p.vidW - bandWidth) * 0.5;
+    let bandEnd = bandStart + bandWidth;
+
+    if (sourceX < halfX) {
+      layer = p.oldest;
+    }
+
+    if (sourceX >= bandStart && sourceX < bandEnd) {
+      let slitIndex = clamp(i32(floor((sourceX - bandStart) / p.slitW)), 0, p.cnt - 1);
+      layer = ringIndex(p.oldest, p.cap, slitIndex);
+    }
+  } else {
+    let sourceY = uv.y * p.vidH;
+    let halfY = p.vidH * 0.5;
+    let bandHeight = f32(p.cnt) * p.slitW;
+    let bandStart = (p.vidH - bandHeight) * 0.5;
+    let bandEnd = bandStart + bandHeight;
+
+    if (sourceY < halfY) {
+      layer = p.oldest;
+    }
+
+    if (sourceY >= bandStart && sourceY < bandEnd) {
+      let slitIndex = clamp(i32(floor((sourceY - bandStart) / p.slitW)), 0, p.cnt - 1);
+      layer = ringIndex(p.oldest, p.cap, slitIndex);
+    }
   }
 
   return textureSampleLevel(tex, sm, uv, layer, 0.0);
@@ -325,15 +346,19 @@ async function init() {
   if (savedFPS) targetFPS = parseInt(savedFPS, 10);
   const savedSlitWidth = localStorage.getItem('slitscan-slit-width');
   if (savedSlitWidth) slitWidth = parseInt(savedSlitWidth, 10);
+  const savedOrientation = localStorage.getItem('slitscan-orientation');
+  if (savedOrientation === 'horizontal' || savedOrientation === 'vertical') {
+    orientationMode = savedOrientation;
+  }
 
   document.getElementById('buffer-slider').value = bufferSize;
   document.getElementById('fps-slider').value = targetFPS;
   document.getElementById('slit-width-slider').value = slitWidth;
+  document.getElementById('orientation-select').value = orientationMode;
   updateLabels();
 
   ready = true;
   document.getElementById('loading-overlay').classList.add('hidden');
-  document.getElementById('hud').style.display = 'flex';
   requestAnimationFrame(frame);
 }
 
@@ -419,13 +444,11 @@ function frame(now) {
   fpsFrames++;
   if (now - fpsLast >= 1000) {
     achievedFPS = (fpsFrames * 1000) / (now - fpsLast);
-    document.getElementById('hud-fps').textContent = achievedFPS.toFixed(1) + ' fps';
     document.getElementById('achieved-fps-label').textContent = achievedFPS.toFixed(1);
     fpsFrames = 0; fpsLast = now;
   }
 
   const delay = count / Math.max(targetFPS, 1);
-  document.getElementById('hud-delay').textContent = delay.toFixed(1) + 's delay';
   document.getElementById('display-buffer-label').textContent = String(count);
 
   if (!count) return;
@@ -433,7 +456,14 @@ function frame(now) {
   // uniforms
   const buf = new ArrayBuffer(48);
   new Int32Array(buf, 0, 4).set([oldestI, newestI, count, bufferSize]);
-  new Float32Array(buf, 16, 5).set([slitWidth, texW, texH, ctx.canvas.width, ctx.canvas.height]);
+  new Float32Array(buf, 16, 6).set([
+    slitWidth,
+    orientationMode === 'horizontal' ? 1 : 0,
+    texW,
+    texH,
+    ctx.canvas.width,
+    ctx.canvas.height
+  ]);
   device.queue.writeBuffer(uniformBuf, 0, buf);
 
   const enc = device.createCommandEncoder();
@@ -486,6 +516,15 @@ function setupUI(canvas) {
     localStorage.setItem('slitscan-slit-width', slitWidth);
   });
 
+  document.getElementById('orientation-select').addEventListener('change', e => {
+    orientationMode = e.target.value === 'horizontal' ? 'horizontal' : 'vertical';
+    clampBufferSize();
+    head = 0;
+    count = 0;
+    updateLabels();
+    localStorage.setItem('slitscan-orientation', orientationMode);
+  });
+
   document.getElementById('camera-select').addEventListener('change', async e => {
     const sel = e.target;
     sel.disabled = true;
@@ -514,12 +553,13 @@ function updateLabels() {
 
 function clampBufferSize() {
   const bufferSlider = document.getElementById('buffer-slider');
-  const maxBufferForWidth = Math.max(12, Math.min(CFG.maxBuffer, Math.floor(CFG.processWidth / Math.max(slitWidth, 1))));
-  bufferSlider.max = String(maxBufferForWidth);
+  const axisSize = orientationMode === 'horizontal' ? texH : CFG.processWidth;
+  const maxBufferForAxis = Math.max(12, Math.min(CFG.maxBuffer, Math.floor(axisSize / Math.max(slitWidth, 1))));
+  bufferSlider.max = String(maxBufferForAxis);
   bufferSlider.step = String(Math.max(1, Math.min(6, slitWidth)));
 
-  if (bufferSize > maxBufferForWidth) {
-    bufferSize = maxBufferForWidth;
+  if (bufferSize > maxBufferForAxis) {
+    bufferSize = maxBufferForAxis;
   }
 
   bufferSlider.value = String(bufferSize);
