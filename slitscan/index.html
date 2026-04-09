@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Time Slitscan</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#000;overflow:hidden;
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;
+  color:#fff;-webkit-user-select:none;user-select:none}
+#canvas{width:100%;height:100%;display:block;touch-action:none}
+
+#error-overlay{position:fixed;inset:0;display:none;flex-direction:column;
+  align-items:center;justify-content:center;padding:2rem;text-align:center;background:#000;z-index:100}
+#error-overlay h1{font-size:1.5rem;margin-bottom:1rem}
+#error-overlay p{color:#aaa;max-width:400px;line-height:1.5}
+
+#loading-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+  background:#000;z-index:90;transition:opacity .3s}
+#loading-overlay.hidden{opacity:0;pointer-events:none}
+
+.spinner{width:40px;height:40px;border:3px solid #333;border-top-color:#fff;
+  border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+#settings{position:fixed;bottom:0;left:0;right:0;
+  background:rgba(28,28,30,.95);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);
+  border-radius:16px 16px 0 0;padding:1.25rem 1.5rem calc(env(safe-area-inset-bottom,0px) + 1.25rem);
+  transform:translateY(100%);transition:transform .3s ease;z-index:50;max-height:60vh;overflow-y:auto}
+#settings.open{transform:translateY(0)}
+
+.settings-handle{width:36px;height:4px;background:#666;border-radius:2px;margin:0 auto 1rem}
+
+.settings-section{margin-bottom:1.25rem}
+.settings-section:last-child{margin-bottom:0}
+
+.section-label{font-size:.75rem;color:#8e8e93;text-transform:uppercase;
+  letter-spacing:.05em;margin-bottom:.5rem}
+
+.setting-row{display:flex;align-items:center;justify-content:space-between;
+  padding:.75rem 1rem;background:rgba(44,44,46,.8);border-radius:10px;margin-bottom:.5rem}
+
+.setting-label{font-size:.95rem}
+.setting-value{font-size:.85rem;color:#8e8e93}
+
+select{background:rgba(58,58,60,.8);color:#fff;border:none;border-radius:8px;
+  padding:.4rem .6rem;font-size:.9rem;outline:none;max-width:55%}
+
+input[type=range]{-webkit-appearance:none;width:100%;height:4px;
+  background:#48484a;border-radius:2px;outline:none;margin:.75rem 0 .25rem}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;
+  background:#fff;border-radius:50%;cursor:pointer}
+
+.info-text{font-size:.75rem;color:#636366;line-height:1.4;margin-top:.5rem}
+
+#hud{position:fixed;top:env(safe-area-inset-top,12px);left:0;right:0;
+  display:none;justify-content:space-between;padding:.75rem 1rem;pointer-events:none;z-index:10}
+.hud-badge{background:rgba(0,0,0,.5);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
+  padding:.3rem .6rem;border-radius:6px;font-size:.75rem;font-variant-numeric:tabular-nums}
+
+#tap-hint{position:fixed;bottom:calc(env(safe-area-inset-bottom,0px) + 1rem);left:50%;
+  transform:translateX(-50%);background:rgba(0,0,0,.5);backdrop-filter:blur(10px);
+  -webkit-backdrop-filter:blur(10px);padding:.4rem 1rem;border-radius:20px;
+  font-size:.8rem;color:#aaa;z-index:10;animation:fadeHint 3s 2s forwards}
+@keyframes fadeHint{to{opacity:0;pointer-events:none}}
+
+#version{position:fixed;bottom:4px;right:8px;font-size:.6rem;color:#333;z-index:5}
+</style>
+</head>
+<body>
+
+<canvas id="canvas"></canvas>
+
+<div id="loading-overlay"><div class="spinner"></div></div>
+
+<div id="error-overlay">
+  <h1 id="error-title"></h1>
+  <p id="error-msg"></p>
+</div>
+
+<div id="hud">
+  <span class="hud-badge" id="hud-delay">0.0s delay</span>
+  <span class="hud-badge" id="hud-fps">-- fps</span>
+</div>
+
+<div id="tap-hint">Tap for settings</div>
+<div id="version">v1.0.0</div>
+
+<div id="settings">
+  <div class="settings-handle"></div>
+
+  <div class="settings-section">
+    <div class="section-label">Camera</div>
+    <div class="setting-row">
+      <span class="setting-label">Source</span>
+      <select id="camera-select"><option>Loading...</option></select>
+    </div>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-label">Time Buffer</div>
+    <div class="setting-row" style="flex-direction:column;align-items:stretch">
+      <div style="display:flex;justify-content:space-between;margin-bottom:.25rem">
+        <span class="setting-label" id="buffer-label">72 frames</span>
+        <span class="setting-value" id="delay-label">~5.9s delay</span>
+      </div>
+      <input type="range" id="buffer-slider" min="12" max="180" step="6" value="72">
+    </div>
+    <p class="info-text">Captures ~12 frames/sec at 320px width. More frames = longer time gap but more memory.</p>
+  </div>
+
+  <div class="settings-section">
+    <div class="section-label">Effect</div>
+    <p class="info-text">Left half shows the oldest buffered frame. Right half shows the live camera feed. The white line marks the time boundary.</p>
+  </div>
+</div>
+
+<script>
+// =============================================================
+// Time Slitscan — WebGPU  v1.0.0
+// =============================================================
+
+const CFG = {
+  processWidth: 320,
+  targetFPS: 12,
+  maxBuffer: 180,
+  defaultBuffer: 72,
+};
+
+// ---- state ----
+let device, ctx, pipeline, bindGroup, uniformBuf, texArray, texSampler;
+let offscreen, offCtx, video;
+let texW = CFG.processWidth, texH = 240;
+let bufferSize = CFG.defaultBuffer;
+let head = 0, count = 0, oldestI = 0, newestI = 0;
+let lastCapture = 0, fpsFrames = 0, fpsLast = 0;
+let settingsOpen = false, ready = false;
+let isFrontCamera = true;
+
+// ---- WGSL ----
+const WGSL = `
+struct V { @builtin(position) p: vec4f, @location(0) uv: vec2f };
+
+struct P {
+  oldest: i32, newest: i32, cnt: i32, _p: i32,
+  vidW: f32, vidH: f32, canW: f32, canH: f32,
+};
+
+@vertex fn vs(@builtin(vertex_index) i: u32) -> V {
+  let u = f32((i << 1u) & 2u);
+  let v = f32(i & 2u);
+  var o: V;
+  o.p = vec4f(u * 2.0 - 1.0, v * -2.0 + 1.0, 0.0, 1.0);
+  o.uv = vec2f(u, v);
+  return o;
+}
+
+@group(0) @binding(0) var tex: texture_2d_array<f32>;
+@group(0) @binding(1) var sm: sampler;
+@group(0) @binding(2) var<uniform> p: P;
+
+@fragment fn fs(v: V) -> @location(0) vec4f {
+  let va = p.vidW / p.vidH;
+  let ca = p.canW / p.canH;
+  var uv = v.uv;
+
+  if (ca > va) {
+    let s = ca / va;
+    uv.y = (uv.y - 0.5) / s + 0.5;
+  } else {
+    let s = va / ca;
+    uv.x = (uv.x - 0.5) / s + 0.5;
+  }
+
+  if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) {
+    return vec4f(0.0, 0.0, 0.0, 1.0);
+  }
+
+  if (p.cnt < 2) {
+    return textureSampleLevel(tex, sm, uv, p.newest, 0.0);
+  }
+
+  var c: vec4f;
+  if (uv.x < 0.5) {
+    c = textureSampleLevel(tex, sm, uv, p.oldest, 0.0);
+  } else {
+    c = textureSampleLevel(tex, sm, uv, p.newest, 0.0);
+  }
+
+  // separator line
+  let lw = 1.5 / p.canW;
+  if (abs(uv.x - 0.5) < lw) {
+    c = mix(c, vec4f(1.0, 1.0, 1.0, 1.0), 0.9);
+  }
+  return c;
+}
+`;
+
+// ---- init ----
+async function init() {
+  if (!navigator.gpu) return showError('WebGPU Not Supported',
+    'This app requires WebGPU. Please use Chrome 113+, Edge 113+, or Safari 18+ (with WebGPU enabled).');
+
+  const adapter = await navigator.gpu.requestAdapter();
+  if (!adapter) return showError('No GPU Adapter', 'Could not find a compatible GPU.');
+
+  device = await adapter.requestDevice();
+  device.lost.then(info => { if (info.reason !== 'destroyed') showError('GPU Lost', info.message); });
+
+  const canvas = document.getElementById('canvas');
+  ctx = canvas.getContext('webgpu');
+  const fmt = navigator.gpu.getPreferredCanvasFormat();
+  ctx.configure({ device, format: fmt, alphaMode: 'opaque' });
+
+  function resize() {
+    const dpr = Math.min(devicePixelRatio, 2);
+    canvas.width = Math.floor(innerWidth * dpr);
+    canvas.height = Math.floor(innerHeight * dpr);
+  }
+  resize();
+  addEventListener('resize', resize);
+
+  // camera
+  try { await startCamera(); }
+  catch { return showError('Camera Access Required',
+    'Please allow camera access in your browser and reload the page.'); }
+
+  await new Promise(r => { if (video.videoWidth) r(); else video.onloadeddata = r; });
+
+  const aspect = video.videoHeight / video.videoWidth;
+  texW = CFG.processWidth;
+  texH = Math.round(CFG.processWidth * aspect);
+  if (texH & 1) texH++;
+
+  offscreen = new OffscreenCanvas(texW, texH);
+  offCtx = offscreen.getContext('2d');
+
+  // GPU resources
+  texArray = device.createTexture({
+    size: [texW, texH, CFG.maxBuffer],
+    format: 'rgba8unorm',
+    usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST | GPUTextureUsage.RENDER_ATTACHMENT,
+  });
+
+  texSampler = device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+
+  uniformBuf = device.createBuffer({
+    size: 32,
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+
+  const mod = device.createShaderModule({ code: WGSL });
+  const bgl = device.createBindGroupLayout({ entries: [
+    { binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'float', viewDimension: '2d-array' } },
+    { binding: 1, visibility: GPUShaderStage.FRAGMENT, sampler: { type: 'filtering' } },
+    { binding: 2, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+  ]});
+
+  pipeline = device.createRenderPipeline({
+    layout: device.createPipelineLayout({ bindGroupLayouts: [bgl] }),
+    vertex: { module: mod, entryPoint: 'vs' },
+    fragment: { module: mod, entryPoint: 'fs', targets: [{ format: fmt }] },
+    primitive: { topology: 'triangle-list' },
+  });
+
+  bindGroup = device.createBindGroup({ layout: bgl, entries: [
+    { binding: 0, resource: texArray.createView({ dimension: '2d-array' }) },
+    { binding: 1, resource: texSampler },
+    { binding: 2, resource: { buffer: uniformBuf } },
+  ]});
+
+  await enumerateCameras();
+  setupUI(canvas);
+
+  // restore saved buffer
+  const saved = localStorage.getItem('slitscan-buf');
+  if (saved) { bufferSize = parseInt(saved); document.getElementById('buffer-slider').value = bufferSize; }
+  updateLabels();
+
+  ready = true;
+  document.getElementById('loading-overlay').classList.add('hidden');
+  document.getElementById('hud').style.display = 'flex';
+  requestAnimationFrame(frame);
+}
+
+// ---- camera ----
+async function startCamera(deviceId) {
+  if (video?.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+
+  const c = { video: { width: { ideal: 640 }, height: { ideal: 480 } } };
+  if (deviceId) c.video.deviceId = { exact: deviceId };
+  else c.video.facingMode = 'user';
+
+  const stream = await navigator.mediaDevices.getUserMedia(c);
+
+  if (!video) { video = document.createElement('video'); video.playsInline = true; video.muted = true; }
+  video.srcObject = stream;
+  await video.play();
+
+  const track = stream.getVideoTracks()[0];
+  const settings = track.getSettings();
+  isFrontCamera = settings.facingMode === 'user' || settings.facingMode === 'environment' === false;
+
+  head = 0; count = 0;
+}
+
+async function enumerateCameras() {
+  const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === 'videoinput');
+  const sel = document.getElementById('camera-select');
+  sel.innerHTML = '';
+  const curId = video?.srcObject?.getVideoTracks()[0]?.getSettings()?.deviceId;
+  devs.forEach((d, i) => {
+    const o = document.createElement('option');
+    o.value = d.deviceId;
+    o.textContent = d.label || `Camera ${i + 1}`;
+    if (d.deviceId === curId) o.selected = true;
+    sel.appendChild(o);
+  });
+}
+
+// ---- capture ----
+function capture() {
+  if (!video || video.readyState < 2) return;
+
+  offCtx.save();
+  if (isFrontCamera) {
+    offCtx.translate(texW, 0);
+    offCtx.scale(-1, 1);
+  }
+  offCtx.drawImage(video, 0, 0, texW, texH);
+  offCtx.restore();
+
+  let wi;
+  if (count < bufferSize) { wi = (head + count) % bufferSize; count++; }
+  else { wi = head; head = (head + 1) % bufferSize; }
+
+  device.queue.copyExternalImageToTexture(
+    { source: offscreen },
+    { texture: texArray, origin: [0, 0, wi] },
+    [texW, texH]
+  );
+
+  newestI = wi;
+  oldestI = head;
+}
+
+// ---- render loop ----
+function frame(now) {
+  requestAnimationFrame(frame);
+  if (!ready) return;
+
+  const interval = 1000 / CFG.targetFPS;
+  if (now - lastCapture >= interval) { capture(); lastCapture = now; }
+
+  // fps
+  fpsFrames++;
+  if (now - fpsLast >= 1000) {
+    document.getElementById('hud-fps').textContent = fpsFrames + ' fps';
+    fpsFrames = 0; fpsLast = now;
+  }
+
+  const delay = Math.max(count - 1, 0) / CFG.targetFPS;
+  document.getElementById('hud-delay').textContent = delay.toFixed(1) + 's delay';
+
+  if (!count) return;
+
+  // uniforms
+  const buf = new ArrayBuffer(32);
+  new Int32Array(buf, 0, 4).set([oldestI, newestI, count, 0]);
+  new Float32Array(buf, 16, 4).set([texW, texH, ctx.canvas.width, ctx.canvas.height]);
+  device.queue.writeBuffer(uniformBuf, 0, buf);
+
+  const enc = device.createCommandEncoder();
+  const pass = enc.beginRenderPass({ colorAttachments: [{
+    view: ctx.getCurrentTexture().createView(),
+    loadOp: 'clear', storeOp: 'store',
+    clearValue: { r: 0, g: 0, b: 0, a: 1 },
+  }]});
+  pass.setPipeline(pipeline);
+  pass.setBindGroup(0, bindGroup);
+  pass.draw(3);
+  pass.end();
+  device.queue.submit([enc.finish()]);
+}
+
+// ---- UI ----
+function setupUI(canvas) {
+  const panel = document.getElementById('settings');
+  canvas.addEventListener('click', () => {
+    settingsOpen = !settingsOpen;
+    panel.classList.toggle('open', settingsOpen);
+  });
+  panel.addEventListener('click', e => e.stopPropagation());
+
+  document.getElementById('buffer-slider').addEventListener('input', e => {
+    bufferSize = parseInt(e.target.value);
+    head = 0; count = 0;
+    updateLabels();
+    localStorage.setItem('slitscan-buf', bufferSize);
+  });
+
+  document.getElementById('camera-select').addEventListener('change', async e => {
+    const sel = e.target;
+    sel.disabled = true;
+    try {
+      await startCamera(e.target.value);
+      // re-detect front camera
+      const track = video.srcObject.getVideoTracks()[0];
+      const s = track.getSettings();
+      isFrontCamera = !s.facingMode || s.facingMode === 'user';
+    } catch (err) {
+      console.error('Camera switch failed:', err);
+    }
+    sel.disabled = false;
+  });
+}
+
+function updateLabels() {
+  document.getElementById('buffer-label').textContent = bufferSize + ' frames';
+  const d = Math.max(bufferSize - 1, 0) / CFG.targetFPS;
+  document.getElementById('delay-label').textContent = '~' + d.toFixed(1) + 's delay';
+}
+
+function showError(title, msg) {
+  document.getElementById('loading-overlay').style.display = 'none';
+  const el = document.getElementById('error-overlay');
+  el.style.display = 'flex';
+  document.getElementById('error-title').textContent = title;
+  document.getElementById('error-msg').textContent = msg;
+}
+
+init().catch(e => {
+  console.error(e);
+  showError('Initialization Error', e.message || 'Something went wrong starting the app.');
+});
+</script>
+</body>
+</html>
