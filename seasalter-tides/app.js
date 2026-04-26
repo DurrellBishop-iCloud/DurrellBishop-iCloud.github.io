@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.12";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.12";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.13";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.13";
 
 const MONTHS = [
   "January",
@@ -949,9 +949,9 @@ function syncDateInputsForYear(year) {
 function getCalendarMetrics() {
   const isPhone = window.matchMedia("(max-width: 760px)").matches;
   return {
-    chartHeight: isPhone ? 700 : CALENDAR_CHART_HEIGHT,
-    labelTop: isPhone ? 156 : CALENDAR_LABEL_TOP,
-    bottomPad: isPhone ? 52 : CALENDAR_BOTTOM_PAD,
+    chartHeight: isPhone ? 520 : CALENDAR_CHART_HEIGHT,
+    labelTop: isPhone ? 148 : CALENDAR_LABEL_TOP,
+    bottomPad: isPhone ? 42 : CALENDAR_BOTTOM_PAD,
   };
 }
 

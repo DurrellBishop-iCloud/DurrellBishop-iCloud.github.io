@@ -395,11 +395,11 @@ button:disabled {
 }
 
 .calendar-axis-left {
-  text-align: left;
+  text-align: right;
 }
 
 .calendar-axis-right {
-  text-align: right;
+  text-align: left;
 }
 
 .calendar-axis-label {
@@ -414,11 +414,11 @@ button:disabled {
 }
 
 .calendar-axis-left .calendar-axis-label span {
-  left: 0;
+  right: 4px;
 }
 
 .calendar-axis-right .calendar-axis-label span {
-  right: 0;
+  left: 4px;
 }
 
 .calendar-scroller {
