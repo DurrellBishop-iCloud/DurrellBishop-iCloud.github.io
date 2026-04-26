@@ -149,6 +149,38 @@
         </dl>
       </section>
 
+      <section class="card visual-card">
+        <div class="card-head">
+          <div>
+            <p class="kicker">Graphic View</p>
+            <h2>High tide window calendar</h2>
+          </div>
+        </div>
+
+        <div class="visual-toolbar">
+          <p class="visual-copy">
+            Each vertical stroke is a day from 8am to 8pm. Weekends are flagged in orange, mornings and afternoons are lightly split, and the blue blocks mark the time around each high tide.
+          </p>
+
+          <label class="field visual-field">
+            <span>Highlight span</span>
+            <select id="highlightWindow" name="highlightWindow">
+              <option value="1">1 hour either side</option>
+              <option value="2" selected>2 hours either side</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="visualEmptyState" class="empty-state">
+          <h3>No calendar drawn yet</h3>
+          <p>Generate a date range and the app will draw a thin-line high-tide calendar from 8am to 8pm.</p>
+        </div>
+
+        <div id="calendarWrap" class="calendar-wrap is-hidden">
+          <div id="calendarGraphic" class="calendar-graphic" aria-live="polite"></div>
+        </div>
+      </section>
+
       <section class="card table-card">
         <div class="card-head">
           <div>

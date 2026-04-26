@@ -9,6 +9,11 @@
   --accent-strong: #0a5056;
   --accent-soft: #d7ece8;
   --warn: #9f5e00;
+  --weekend: #d96f1d;
+  --calendar-high: #6abfe9;
+  --calendar-morning: rgba(191, 226, 233, 0.72);
+  --calendar-afternoon: rgba(246, 241, 223, 0.84);
+  --calendar-evening: rgba(95, 104, 114, 0.18);
   --shadow: 0 18px 40px rgba(24, 33, 42, 0.09);
   --radius-xl: 28px;
   --radius-lg: 18px;
@@ -145,6 +150,7 @@ body::before {
 
 .controls-card,
 .summary-card,
+.visual-card,
 .table-card {
   padding: 24px;
 }
@@ -343,6 +349,49 @@ button:disabled {
   line-height: 1.6;
 }
 
+.visual-toolbar {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.visual-copy {
+  max-width: 66ch;
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.65;
+}
+
+.visual-field {
+  width: min(100%, 240px);
+  flex: 0 0 auto;
+}
+
+.calendar-wrap {
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid rgba(24, 33, 42, 0.08);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(249, 246, 237, 0.88)),
+    rgba(255, 255, 255, 0.66);
+}
+
+.calendar-wrap.is-hidden {
+  display: none;
+}
+
+.calendar-graphic {
+  min-height: 620px;
+  padding: 18px;
+}
+
+.calendar-svg {
+  display: block;
+}
+
 .table-wrap {
   overflow: auto;
   max-height: 72vh;
@@ -461,6 +510,7 @@ button:disabled {
   .hero,
   .controls-card,
   .summary-card,
+  .visual-card,
   .table-card {
     padding: 18px;
   }
@@ -471,13 +521,19 @@ button:disabled {
   }
 
   .card-head,
-  .status-row {
+  .status-row,
+  .visual-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
 
   .actions {
     flex-direction: column;
+  }
+
+  .calendar-graphic {
+    min-height: 520px;
+    padding: 12px;
   }
 
   .tide-table {

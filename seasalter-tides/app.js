@@ -16,14 +16,27 @@ const MONTHS = [
   "December",
 ];
 
+const CALENDAR_START_HOUR = 8;
+const CALENDAR_END_HOUR = 20;
+const WEEKEND_DAYS = new Set(["Sat", "Sun"]);
+const CALENDAR_COLORS = {
+  weekend: "#d96f1d",
+  high: "#6abfe9",
+  morning: "rgba(191, 226, 233, 0.72)",
+  afternoon: "rgba(246, 241, 223, 0.84)",
+  evening: "rgba(95, 104, 114, 0.18)",
+};
+
 const state = {
   events: [],
   rows: [],
   visibleRows: [],
+  calendarRows: [],
   year: null,
   timezoneMode: "local",
   timeFormat: "24",
   tideFilter: "both",
+  highlightWindowHours: 2,
   search: "",
   month: "all",
   startDate: "",
@@ -52,6 +65,10 @@ const elements = {
   visibleRowsLabel: document.querySelector("#visibleRowsLabel"),
   yearLabel: document.querySelector("#yearLabel"),
   sourceLabel: document.querySelector("#sourceLabel"),
+  highlightWindow: document.querySelector("#highlightWindow"),
+  visualEmptyState: document.querySelector("#visualEmptyState"),
+  calendarWrap: document.querySelector("#calendarWrap"),
+  calendarGraphic: document.querySelector("#calendarGraphic"),
   emptyState: document.querySelector("#emptyState"),
   tableWrap: document.querySelector("#tableWrap"),
   tableHead: document.querySelector("#tideTableHead"),
@@ -69,6 +86,7 @@ function init() {
   syncDateInputsForYear(defaultYear);
   attachEvents();
   updateSummary();
+  renderCalendar();
   renderTable();
   generateTable({ forceRefresh: false });
 }
@@ -103,6 +121,11 @@ function attachEvents() {
   elements.tideFilter.addEventListener("change", () => {
     state.tideFilter = elements.tideFilter.value;
     applyFiltersAndRender();
+  });
+
+  elements.highlightWindow.addEventListener("change", () => {
+    state.highlightWindowHours = Number(elements.highlightWindow.value) || 2;
+    renderCalendar();
   });
 
   elements.monthFilter.addEventListener("change", () => {
@@ -141,6 +164,7 @@ function generateTable({ forceRefresh }) {
   state.timezoneMode = elements.timezoneMode.value;
   state.timeFormat = elements.timeFormat.value;
   state.tideFilter = elements.tideFilter.value;
+  state.highlightWindowHours = Number(elements.highlightWindow.value) || 2;
   state.month = elements.monthFilter.value;
   state.startDate = elements.startDate.value;
   state.endDate = elements.endDate.value;
@@ -300,11 +324,12 @@ function applyFiltersAndRender() {
       }
 
       return true;
-    })
-    .map((row) => filterRowEvents(row, state.tideFilter));
+    });
 
-  state.visibleRows = rows;
+  state.calendarRows = rows;
+  state.visibleRows = rows.map((row) => filterRowEvents(row, state.tideFilter));
   updateSummary();
+  renderCalendar();
   renderTable();
 }
 
@@ -318,6 +343,175 @@ function filterRowEvents(row, tideFilter) {
   }
 
   return { ...row, highs: row.highs, lows: row.lows };
+}
+
+function renderCalendar() {
+  const rows = state.calendarRows;
+  const hasRows = rows.length > 0;
+  const hasHighs = rows.some((row) => row.highs.length > 0);
+
+  if (!hasRows) {
+    elements.visualEmptyState.querySelector("h3").textContent = "No calendar drawn yet";
+    elements.visualEmptyState.querySelector("p").textContent =
+      "Generate a date range and the app will draw a thin-line high-tide calendar from 8am to 8pm.";
+  } else if (!hasHighs) {
+    elements.visualEmptyState.querySelector("h3").textContent = "No high tides in this filtered range";
+    elements.visualEmptyState.querySelector("p").textContent =
+      "Try widening the date range, clearing the search, or switching back to dates that include high-tide events.";
+  }
+
+  elements.visualEmptyState.style.display = hasRows && hasHighs ? "none" : "block";
+  elements.calendarWrap.classList.toggle("is-hidden", !(hasRows && hasHighs));
+
+  if (!(hasRows && hasHighs)) {
+    elements.calendarGraphic.innerHTML = "";
+    return;
+  }
+
+  elements.calendarGraphic.innerHTML = buildCalendarSvg(rows);
+}
+
+function buildCalendarSvg(rows) {
+  const chartHeight = 540;
+  const labelTop = 78;
+  const bottomPad = 42;
+  const leftPad = 18;
+  const axisWidth = 66;
+  const columnWidth = 8;
+  const columnGap = 5;
+  const pitch = columnWidth + columnGap;
+  const chartWidth = rows.length * pitch;
+  const totalWidth = leftPad + chartWidth + axisWidth + 18;
+  const totalHeight = labelTop + chartHeight + bottomPad;
+  const middayY = labelTop + timeToY(12, chartHeight);
+  const eveningY = labelTop + timeToY(18, chartHeight);
+  const chartBottom = labelTop + chartHeight;
+  const axisX = leftPad + chartWidth + 12;
+  const windowHours = state.highlightWindowHours;
+  const timeOptions = {
+    timezoneMode: state.timezoneMode,
+    timeZone: ENGINE_CONFIG.timezone,
+  };
+
+  const hourlyGuides = [];
+  for (let hour = CALENDAR_END_HOUR; hour >= CALENDAR_START_HOUR; hour -= 1) {
+    const y = labelTop + timeToY(hour, chartHeight);
+    hourlyGuides.push(`
+      <line x1="${leftPad - 2}" y1="${y}" x2="${leftPad + chartWidth + 2}" y2="${y}" stroke="rgba(24, 33, 42, 0.06)" stroke-width="1" />
+      <text x="${axisX}" y="${y + 4}" fill="rgba(24, 33, 42, 0.76)" font-size="14" font-family="Manrope, system-ui, sans-serif">${escapeHtml(
+        formatAxisLabel(hour)
+      )}</text>
+    `);
+  }
+
+  const dayColumns = rows.map((row, index) => {
+    const x = leftPad + index * pitch;
+    const isWeekend = WEEKEND_DAYS.has(row.day);
+    const showLabel = shouldShowCalendarLabel(row, index, rows.length);
+    const label = showLabel
+      ? `
+        <text
+          x="${x + columnWidth - 1}"
+          y="${labelTop - 10}"
+          transform="rotate(-90 ${x + columnWidth - 1} ${labelTop - 10})"
+          fill="${isWeekend ? CALENDAR_COLORS.weekend : "rgba(24, 33, 42, 0.74)"}"
+          font-size="14"
+          font-weight="${isWeekend ? 800 : 700}"
+          font-family="Manrope, system-ui, sans-serif"
+        >${escapeHtml(formatCalendarLabel(row))}</text>
+      `
+      : "";
+
+    const weekendCaps = isWeekend
+      ? `
+        <rect x="${x}" y="${labelTop - 22}" width="${columnWidth}" height="10" rx="2" fill="${CALENDAR_COLORS.weekend}" />
+        <rect x="${x}" y="${chartBottom + 10}" width="${columnWidth}" height="10" rx="2" fill="${CALENDAR_COLORS.weekend}" />
+      `
+      : "";
+
+    const highlights = row.highs
+      .map((event) => {
+        const eventHour = getHourValueFromEpoch(event.epoch, timeOptions);
+        const startHour = Math.max(CALENDAR_START_HOUR, eventHour - windowHours);
+        const endHour = Math.min(CALENDAR_END_HOUR, eventHour + windowHours);
+
+        if (endHour <= CALENDAR_START_HOUR || startHour >= CALENDAR_END_HOUR) {
+          return "";
+        }
+
+        const y = labelTop + timeToY(endHour, chartHeight);
+        const height = timeToY(startHour, chartHeight) - timeToY(endHour, chartHeight);
+
+        return `
+          <rect
+            x="${x - 1}"
+            y="${y}"
+            width="${columnWidth + 2}"
+            height="${height}"
+            rx="3"
+            fill="${CALENDAR_COLORS.high}"
+            opacity="0.96"
+          />
+        `;
+      })
+      .join("");
+
+    return `
+      <g>
+        ${label}
+        ${weekendCaps}
+        <rect x="${x}" y="${labelTop}" width="${columnWidth}" height="${middayY - labelTop}" fill="${CALENDAR_COLORS.afternoon}" />
+        <rect x="${x}" y="${labelTop}" width="${columnWidth}" height="${eveningY - labelTop}" fill="${CALENDAR_COLORS.evening}" opacity="0.72" />
+        <rect x="${x}" y="${middayY}" width="${columnWidth}" height="${chartBottom - middayY}" fill="${CALENDAR_COLORS.morning}" />
+        ${highlights}
+        <rect x="${x + 3}" y="${labelTop}" width="2" height="${chartHeight}" rx="1" fill="${isWeekend ? "rgba(217, 111, 29, 0.58)" : "rgba(90, 100, 108, 0.18)"}" />
+      </g>
+    `;
+  });
+
+  const title = `${ENGINE_CONFIG.stationLabel} high tide calendar, ${CALENDAR_START_HOUR}am to ${CALENDAR_END_HOUR - 12}pm`;
+
+  return `
+    <svg
+      class="calendar-svg"
+      xmlns="http://www.w3.org/2000/svg"
+      width="${totalWidth}"
+      height="${totalHeight}"
+      viewBox="0 0 ${totalWidth} ${totalHeight}"
+      role="img"
+      aria-label="${escapeHtml(title)}"
+    >
+      <rect x="0" y="0" width="${totalWidth}" height="${totalHeight}" fill="transparent" />
+      ${hourlyGuides.join("")}
+      ${dayColumns.join("")}
+    </svg>
+  `;
+}
+
+function shouldShowCalendarLabel(row, index, totalRows) {
+  if (index === 0 || index === totalRows - 1) return true;
+  if (row.date.slice(8, 10) === "01") return true;
+  return row.day === "Sat";
+}
+
+function formatCalendarLabel(row) {
+  const day = row.date.slice(8, 10).replace(/^0/, "");
+  const month = MONTHS[Number(row.date.slice(5, 7)) - 1].slice(0, 3);
+  return `${row.day} ${day} ${month}`;
+}
+
+function formatAxisLabel(hour) {
+  if (hour === CALENDAR_END_HOUR) return "8 pm";
+  if (hour === 12) return "midday";
+  if (hour === CALENDAR_START_HOUR) return "8 am";
+  if (hour > 12) return String(hour - 12);
+  return String(hour);
+}
+
+function timeToY(hourValue, chartHeight) {
+  const minutesFromTop = (CALENDAR_END_HOUR - hourValue) * 60;
+  const totalMinutes = (CALENDAR_END_HOUR - CALENDAR_START_HOUR) * 60;
+  return (minutesFromTop / totalMinutes) * chartHeight;
 }
 
 function renderTable() {
@@ -519,6 +713,24 @@ function formatTimeFromEpoch(epochSeconds, options) {
     minute: "2-digit",
     hour12: options.timeFormat === "12",
   }).format(new Date(epochSeconds * 1000));
+}
+
+function getHourValueFromEpoch(epochSeconds, options) {
+  const date = new Date(epochSeconds * 1000);
+
+  if (options.timezoneMode === "utc") {
+    return date.getUTCHours() + date.getUTCMinutes() / 60;
+  }
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: options.timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Number(values.hour) + Number(values.minute) / 60;
 }
 
 function labelForTideFilter(value) {
