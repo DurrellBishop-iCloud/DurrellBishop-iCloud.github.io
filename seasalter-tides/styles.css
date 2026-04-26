@@ -385,7 +385,7 @@ button:disabled {
 
 .calendar-stage {
   display: grid;
-  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  grid-template-columns: 42px minmax(0, 1fr) 42px;
   align-items: start;
   gap: 0;
 }
@@ -429,7 +429,7 @@ button:disabled {
 }
 
 .calendar-scroller {
-  padding: 0 36px;
+  padding: 0 42px;
   background: rgba(255, 255, 255, 0.52);
 }
 
@@ -618,7 +618,7 @@ button:disabled {
   }
 
   .calendar-stage {
-    grid-template-columns: 30px minmax(0, 1fr) 30px;
+    grid-template-columns: 40px minmax(0, 1fr) 40px;
   }
 
   .calendar-axis {
@@ -628,7 +628,7 @@ button:disabled {
   }
 
   .calendar-scroller {
-    padding: 0 30px;
+    padding: 0 40px;
   }
 
   .calendar-tools {
