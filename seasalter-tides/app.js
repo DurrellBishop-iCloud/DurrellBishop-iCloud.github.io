@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.3";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.3";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.4";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.4";
 
 const MONTHS = [
   "January",
@@ -723,7 +723,11 @@ function populateMonthFilter() {
 }
 
 function syncDateInputsForYear(year) {
-  const start = `${year}-01-01`;
+  const today = getTodayDateKey({
+    timezoneMode: "local",
+    timeZone: ENGINE_CONFIG.timezone,
+  });
+  const start = year === Number(today.slice(0, 4)) ? today : `${year}-01-01`;
   const end = `${year}-12-31`;
   elements.startDate.value = start;
   elements.endDate.value = end;
