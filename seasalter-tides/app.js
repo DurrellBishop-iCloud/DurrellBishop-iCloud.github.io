@@ -88,7 +88,7 @@ function init() {
   const now = new Date();
   const defaultYear = now.getFullYear();
   elements.yearInput.value = String(defaultYear);
-  elements.versionPill.textContent = `Version ${ENGINE_CONFIG.appVersion}`;
+  elements.versionPill.textContent = ENGINE_CONFIG.appVersion;
 
   populateMonthFilter();
   syncDateInputsForYear(defaultYear);
@@ -383,7 +383,7 @@ function renderCalendar() {
 
 function buildCalendarSvg(rows) {
   const chartHeight = 540;
-  const labelTop = 118;
+  const labelTop = 146;
   const bottomPad = 46;
   const chartWidth = rows.length * CALENDAR_PITCH;
   const totalWidth = CALENDAR_LEFT_PAD + chartWidth + CALENDAR_AXIS_WIDTH + 18;
@@ -684,9 +684,15 @@ function buildMetadataRows() {
 }
 
 function updateSummary() {
-  elements.yearLabel.textContent = state.year ? String(state.year) : "-";
-  elements.visibleRowsLabel.textContent = String(state.visibleRows.length);
-  elements.sourceLabel.textContent = ENGINE_CONFIG.sourceName;
+  if (elements.yearLabel) {
+    elements.yearLabel.textContent = state.year ? String(state.year) : "-";
+  }
+  if (elements.visibleRowsLabel) {
+    elements.visibleRowsLabel.textContent = String(state.visibleRows.length);
+  }
+  if (elements.sourceLabel) {
+    elements.sourceLabel.textContent = ENGINE_CONFIG.sourceName;
+  }
   elements.rowsPill.textContent = `${state.visibleRows.length} rows`;
 
   if (state.loadedFromCache && state.cacheTimestamp) {

@@ -16,18 +16,7 @@
 <body>
   <div class="page-shell">
     <header class="hero">
-      <div class="hero-topline">
-        <p class="eyebrow">dbgh.uk / tides</p>
-        <span class="pill version-pill" id="versionPill">Version -</span>
-      </div>
-      <h1>Seasalter Year Tide Table</h1>
-      <p class="hero-copy">
-        Build a full-year tide table for Seasalter, preview it in a spreadsheet-style grid, and export the current view as CSV or Excel.
-      </p>
-      <div class="hero-meta">
-        <span>Location: Seasalter, Kent</span>
-        <span>Data basis: open harmonic engine running in your browser</span>
-      </div>
+      <p class="version-line" id="versionPill">Version -</p>
     </header>
 
     <main class="layout">
@@ -78,6 +67,14 @@
           </label>
 
           <label class="field">
+            <span>High tide window</span>
+            <select id="highlightWindow" name="highlightWindow">
+              <option value="1">1 hour either side</option>
+              <option value="2" selected>2 hours either side</option>
+            </select>
+          </label>
+
+          <label class="field">
             <span>Month</span>
             <select id="monthFilter" name="monthFilter">
               <option value="all">All months</option>
@@ -116,64 +113,7 @@
         </div>
       </section>
 
-      <section class="card summary-card">
-        <div class="card-head">
-          <div>
-            <p class="kicker">Summary</p>
-            <h2>Current view</h2>
-          </div>
-        </div>
-
-        <dl class="summary-grid">
-          <div>
-            <dt>Station</dt>
-            <dd>Seasalter</dd>
-          </div>
-          <div>
-            <dt>Coordinates</dt>
-            <dd>51.3490, 1.0049</dd>
-          </div>
-          <div>
-            <dt>Units</dt>
-            <dd>Metres</dd>
-          </div>
-          <div>
-            <dt>Source</dt>
-            <dd id="sourceLabel">Open harmonic engine</dd>
-          </div>
-          <div>
-            <dt>Year</dt>
-            <dd id="yearLabel">-</dd>
-          </div>
-          <div>
-            <dt>Visible rows</dt>
-            <dd id="visibleRowsLabel">0</dd>
-          </div>
-        </dl>
-      </section>
-
       <section class="card visual-card">
-        <div class="card-head">
-          <div>
-            <p class="kicker">Graphic View</p>
-            <h2>High tide window calendar</h2>
-          </div>
-        </div>
-
-        <div class="visual-toolbar">
-          <p class="visual-copy">
-            Each vertical stroke is a day from 8am to 8pm. Weekends are flagged in orange, mornings and afternoons are lightly split, and the blue blocks mark the time around each high tide.
-          </p>
-
-          <label class="field visual-field">
-            <span>Highlight span</span>
-            <select id="highlightWindow" name="highlightWindow">
-              <option value="1">1 hour either side</option>
-              <option value="2" selected>2 hours either side</option>
-            </select>
-          </label>
-        </div>
-
         <div id="visualEmptyState" class="empty-state">
           <h3>No calendar drawn yet</h3>
           <p>Generate a date range and the app will draw a thin-line high-tide calendar from 8am to 8pm.</p>
