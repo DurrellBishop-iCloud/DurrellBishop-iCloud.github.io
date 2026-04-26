@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.11";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.11";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.12";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.12";
 
 const MONTHS = [
   "January",
@@ -466,7 +466,8 @@ function buildCalendarSvg(rows) {
       `
       : "";
 
-    const weekendCaps = (isWeekend || isMonthStart)
+    const showMarkerCaps = isMonthStart || showLabel;
+    const weekendCaps = showMarkerCaps
       ? `
         <rect x="${x + 0.5}" y="${labelTop - 16}" width="${Math.max(2, width - 0.5)}" height="9" fill="${markerColor}" />
         <rect x="${x + 0.5}" y="${chartBottom + 12}" width="${Math.max(2, width - 0.5)}" height="9" fill="${markerColor}" />
