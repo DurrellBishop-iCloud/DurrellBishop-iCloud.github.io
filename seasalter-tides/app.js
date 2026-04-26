@@ -435,6 +435,9 @@ function buildMetadataRows() {
     ["Data source", ENGINE_CONFIG.dataSource],
     ["Reference station", ENGINE_CONFIG.referenceStation],
     ["Prediction engine", ENGINE_CONFIG.engineName],
+    ["Validation", ENGINE_CONFIG.validationNote],
+    ["Validation mean time error", `${ENGINE_CONFIG.validationFit.meanAbsTimeMinutes} minutes`],
+    ["Validation mean height error", `${ENGINE_CONFIG.validationFit.meanAbsHeightMetres} m`],
     ["Generated", new Date().toLocaleString("en-GB")],
     ["Notice", "Open-data approximation. Not for navigation."],
   ];
