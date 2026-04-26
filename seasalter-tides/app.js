@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.3";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.3";
 
 const MONTHS = [
   "January",
