@@ -140,12 +140,22 @@ body::before {
 }
 
 .today-button {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
   min-height: 42px;
   padding: 0 12px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 0;
   border-color: var(--line);
-  background: rgba(255, 255, 255, 0.7);
+  background: #fff;
   color: var(--ink);
   line-height: 1;
+  flex: 0 0 auto;
 }
 
 .calendar-jump {
