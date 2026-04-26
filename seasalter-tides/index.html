@@ -23,7 +23,7 @@
       </p>
       <div class="hero-meta">
         <span>Location: Seasalter, Kent</span>
-        <span>Data basis: live WorldTides API lookup at Seasalter coordinates</span>
+        <span>Data basis: open harmonic engine running in your browser</span>
       </div>
     </header>
 
@@ -32,19 +32,16 @@
         <div class="card-head">
           <div>
             <p class="kicker">Setup</p>
-            <h2>Generate tide data</h2>
+            <h2>Generate tide table</h2>
           </div>
-          <a class="text-link" href="https://www.worldtides.info/developer" target="_blank" rel="noreferrer">Get an API key</a>
+          <a class="text-link" href="https://www.seanoe.org/data/00980/109129/" target="_blank" rel="noreferrer">Open data source</a>
         </div>
 
         <form id="controls-form" class="controls-grid">
           <label class="field field-wide">
-            <span>WorldTides API key</span>
-            <div class="secret-input">
-              <input id="apiKey" name="apiKey" type="password" autocomplete="off" placeholder="Paste your key">
-              <button id="toggleApiKey" type="button" class="ghost-button">Show</button>
-            </div>
-            <small>Saved in this browser only. A leap year needs about 53 weekly API calls.</small>
+            <span>Engine mode</span>
+            <input value="Built-in harmonic prediction engine" readonly>
+            <small>Uses open TICON-4 constituents from Herne Bay plus a tuned Seasalter offset model. Not for navigation.</small>
           </label>
 
           <label class="field">
@@ -101,14 +98,14 @@
 
           <div class="actions field-wide">
             <button id="generateButton" type="submit" class="primary-button">Generate year table</button>
-            <button id="refreshButton" type="button" class="secondary-button">Refresh from API</button>
+            <button id="refreshButton" type="button" class="secondary-button">Rebuild from engine</button>
             <button id="csvButton" type="button" class="secondary-button" disabled>Export CSV</button>
             <button id="xlsxButton" type="button" class="secondary-button" disabled>Export Excel</button>
           </div>
         </form>
 
         <div class="status-row">
-          <p id="statusMessage" class="status-message" aria-live="polite">Enter your API key and choose a year to load the table.</p>
+          <p id="statusMessage" class="status-message" aria-live="polite">Choose a year and the page will generate the table locally.</p>
           <div class="status-pills">
             <span class="pill" id="cachePill">No cache yet</span>
             <span class="pill" id="rowsPill">0 rows</span>
@@ -139,7 +136,7 @@
           </div>
           <div>
             <dt>Source</dt>
-            <dd id="sourceLabel">WorldTides API</dd>
+            <dd id="sourceLabel">Open harmonic engine</dd>
           </div>
           <div>
             <dt>Year</dt>
@@ -176,6 +173,6 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script src="./app.js"></script>
+  <script type="module" src="./app.js"></script>
 </body>
 </html>

@@ -1,14 +1,5 @@
-const CONFIG = {
-  stationName: "Seasalter",
-  stationLabel: "Seasalter, Kent",
-  latitude: 51.349,
-  longitude: 1.0049,
-  timezone: "Europe/London",
-  units: "m",
-  cacheVersion: "v1",
-  apiBase: "https://www.worldtides.info/api/v3",
-  sourceName: "WorldTides API",
-};
+import { createTidePredictor } from "./neaps-tide-predictor.js";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js";
 
 const MONTHS = [
   "January",
@@ -39,13 +30,10 @@ const state = {
   endDate: "",
   loadedFromCache: false,
   cacheTimestamp: null,
-  responseTimezone: CONFIG.timezone,
 };
 
 const elements = {
   form: document.querySelector("#controls-form"),
-  apiKey: document.querySelector("#apiKey"),
-  toggleApiKey: document.querySelector("#toggleApiKey"),
   yearInput: document.querySelector("#yearInput"),
   timezoneMode: document.querySelector("#timezoneMode"),
   timeFormat: document.querySelector("#timeFormat"),
@@ -77,25 +65,15 @@ function init() {
   const defaultYear = now.getFullYear();
   elements.yearInput.value = String(defaultYear);
 
-  const savedKey = localStorage.getItem("seasalter-worldtides-api-key");
-  if (savedKey) {
-    elements.apiKey.value = savedKey;
-  }
-
   populateMonthFilter();
   syncDateInputsForYear(defaultYear);
   attachEvents();
   updateSummary();
   renderTable();
+  generateTable({ forceRefresh: false });
 }
 
 function attachEvents() {
-  elements.toggleApiKey.addEventListener("click", () => {
-    const nextType = elements.apiKey.type === "password" ? "text" : "password";
-    elements.apiKey.type = nextType;
-    elements.toggleApiKey.textContent = nextType === "password" ? "Show" : "Hide";
-  });
-
   elements.yearInput.addEventListener("change", () => {
     const year = Number(elements.yearInput.value);
     if (Number.isInteger(year)) {
@@ -103,13 +81,13 @@ function attachEvents() {
     }
   });
 
-  elements.form.addEventListener("submit", async (event) => {
+  elements.form.addEventListener("submit", (event) => {
     event.preventDefault();
-    await generateTable({ forceRefresh: false });
+    generateTable({ forceRefresh: false });
   });
 
-  elements.refreshButton.addEventListener("click", async () => {
-    await generateTable({ forceRefresh: true });
+  elements.refreshButton.addEventListener("click", () => {
+    generateTable({ forceRefresh: true });
   });
 
   elements.timezoneMode.addEventListener("change", () => {
@@ -151,21 +129,14 @@ function attachEvents() {
   elements.xlsxButton.addEventListener("click", exportXlsx);
 }
 
-async function generateTable({ forceRefresh }) {
-  const apiKey = elements.apiKey.value.trim();
+function generateTable({ forceRefresh }) {
   const year = Number(elements.yearInput.value);
-
-  if (!apiKey) {
-    setStatus("Add a WorldTides API key first.");
-    return;
-  }
 
   if (!Number.isInteger(year) || year < 2000 || year > 2100) {
     setStatus("Choose a valid year between 2000 and 2100.");
     return;
   }
 
-  localStorage.setItem("seasalter-worldtides-api-key", apiKey);
   state.year = year;
   state.timezoneMode = elements.timezoneMode.value;
   state.timeFormat = elements.timeFormat.value;
@@ -176,28 +147,27 @@ async function generateTable({ forceRefresh }) {
   state.search = elements.searchInput.value.trim().toLowerCase();
 
   setBusy(true);
-  setStatus(`Loading ${year} tide extremes for Seasalter...`);
+  setStatus(`Generating ${year} Seasalter tide table from the built-in harmonic engine...`);
 
   try {
-    const payload = await loadYearEvents({ apiKey, year, forceRefresh });
+    const payload = loadYearEvents({ year, forceRefresh });
     state.events = payload.events;
     state.loadedFromCache = payload.loadedFromCache;
     state.cacheTimestamp = payload.cachedAt;
-    state.responseTimezone = payload.timezone || CONFIG.timezone;
     rebuildRowsFromEvents();
     setStatus(
-      `Loaded ${state.events.length} tide events for ${year}${state.loadedFromCache ? " from cache" : ""}.`
+      `Generated ${state.events.length} tide events for ${year}${state.loadedFromCache ? " from local cache" : ""}.`
     );
   } catch (error) {
     console.error(error);
-    setStatus(error.message || "Something went wrong while fetching tide data.");
+    setStatus(error.message || "Something went wrong while generating the tide table.");
   } finally {
     setBusy(false);
   }
 }
 
-async function loadYearEvents({ apiKey, year, forceRefresh }) {
-  const cacheKey = `seasalter-tides:${CONFIG.cacheVersion}:${year}`;
+function loadYearEvents({ year, forceRefresh }) {
+  const cacheKey = `seasalter-tides:${ENGINE_CONFIG.cacheVersion}:${year}`;
 
   if (!forceRefresh) {
     const cached = readCache(cacheKey);
@@ -209,42 +179,33 @@ async function loadYearEvents({ apiKey, year, forceRefresh }) {
     }
   }
 
-  const yearStart = new Date(Date.UTC(year, 0, 1));
-  const yearEnd = new Date(Date.UTC(year, 11, 31));
-  const requests = [];
-  let cursor = new Date(yearStart);
+  const predictor = createTidePredictor(CONSTITUENTS, {
+    offset: ENGINE_CONFIG.referenceOffset,
+  });
 
-  while (cursor <= yearEnd) {
-    const chunkStart = new Date(cursor);
-    const chunkEnd = new Date(Date.UTC(chunkStart.getUTCFullYear(), chunkStart.getUTCMonth(), chunkStart.getUTCDate() + 6));
-    const effectiveEnd = chunkEnd < yearEnd ? chunkEnd : yearEnd;
-    const diffDays = Math.floor((effectiveEnd - chunkStart) / 86400000) + 1;
-    requests.push({
-      date: formatIsoDateUtc(chunkStart),
-      days: diffDays,
-    });
-    cursor = new Date(Date.UTC(chunkStart.getUTCFullYear(), chunkStart.getUTCMonth(), chunkStart.getUTCDate() + 7));
-  }
+  // Generate a small buffer around the requested year so local-time display can
+  // include events that cross the UTC midnight boundary.
+  const start = new Date(Date.UTC(year - 1, 11, 31, 0, 0, 0));
+  const end = new Date(Date.UTC(year + 1, 0, 2, 0, 0, 0));
 
-  const chunks = [];
-  let timezone = CONFIG.timezone;
+  const extremes = predictor.getExtremesPrediction({
+    start,
+    end,
+    offsets: ENGINE_CONFIG.subordinateOffsets,
+    labels: {
+      high: "High",
+      low: "Low",
+    },
+  });
 
-  for (let index = 0; index < requests.length; index += 1) {
-    const request = requests[index];
-    setStatus(`Fetching ${year} data... chunk ${index + 1} of ${requests.length}`);
-    const chunk = await fetchChunk({
-      apiKey,
-      startDate: request.date,
-      days: request.days,
-    });
-    timezone = chunk.timezone || timezone;
-    chunks.push(...chunk.events);
-  }
-
-  const deduped = dedupeEvents(chunks);
   const payload = {
-    events: deduped,
-    timezone,
+    events: extremes
+      .map((entry) => ({
+        dt: Math.round(entry.time.getTime() / 1000),
+        height: entry.level,
+        type: entry.high ? "high" : "low",
+      }))
+      .sort((a, b) => a.dt - b.dt),
     cachedAt: new Date().toISOString(),
     loadedFromCache: false,
   };
@@ -253,59 +214,10 @@ async function loadYearEvents({ apiKey, year, forceRefresh }) {
   return payload;
 }
 
-async function fetchChunk({ apiKey, startDate, days }) {
-  const url = new URL(CONFIG.apiBase);
-  url.searchParams.set("key", apiKey);
-  url.searchParams.set("lat", String(CONFIG.latitude));
-  url.searchParams.set("lon", String(CONFIG.longitude));
-  url.searchParams.set("extremes", "");
-  url.searchParams.set("date", startDate);
-  url.searchParams.set("days", String(days));
-  url.searchParams.set("localtime", "");
-
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    throw new Error(`WorldTides returned ${response.status}. Please check the API key and try again.`);
-  }
-
-  const data = await response.json();
-  if (data.error) {
-    throw new Error(data.error);
-  }
-
-  if (!Array.isArray(data.extremes)) {
-    throw new Error("The tide source did not return any extremes for this request.");
-  }
-
-  return {
-    timezone: data.timezone || CONFIG.timezone,
-    events: data.extremes.map((entry) => ({
-      dt: entry.dt,
-      date: entry.date,
-      height: entry.height,
-      type: entry.type,
-    })),
-  };
-}
-
-function dedupeEvents(events) {
-  const seen = new Set();
-  return events
-    .filter((event) => {
-      const key = `${event.dt}:${event.type}`;
-      if (seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    })
-    .sort((a, b) => a.dt - b.dt);
-}
-
 function rebuildRowsFromEvents() {
   state.rows = buildRows(state.events, {
     timezoneMode: state.timezoneMode,
-    timeZone: state.responseTimezone || CONFIG.timezone,
+    timeZone: ENGINE_CONFIG.timezone,
     timeFormat: state.timeFormat,
   });
   applyFiltersAndRender();
@@ -359,35 +271,37 @@ function buildRows(events, options) {
 function applyFiltersAndRender() {
   let rows = [...state.rows];
 
-  rows = rows.filter((row) => {
-    if (state.month !== "all") {
-      const monthIndex = String(Number(row.date.slice(5, 7)) - 1);
-      if (monthIndex !== state.month) return false;
-    }
+  rows = rows
+    .filter((row) => {
+      if (state.month !== "all") {
+        const monthIndex = String(Number(row.date.slice(5, 7)) - 1);
+        if (monthIndex !== state.month) return false;
+      }
 
-    if (state.startDate && row.date < state.startDate) return false;
-    if (state.endDate && row.date > state.endDate) return false;
+      if (state.startDate && row.date < state.startDate) return false;
+      if (state.endDate && row.date > state.endDate) return false;
 
-    const filtered = filterRowEvents(row, state.tideFilter);
-    if (filtered.highs.length === 0 && filtered.lows.length === 0) return false;
+      const filtered = filterRowEvents(row, state.tideFilter);
+      if (filtered.highs.length === 0 && filtered.lows.length === 0) return false;
 
-    if (state.search) {
-      const haystack = [
-        row.date,
-        row.day,
-        MONTHS[Number(row.date.slice(5, 7)) - 1],
-        filtered.highs.map((item) => `${item.type} ${item.time} ${item.height}`).join(" "),
-        filtered.lows.map((item) => `${item.type} ${item.time} ${item.height}`).join(" "),
-        row.notes,
-      ]
-        .join(" ")
-        .toLowerCase();
+      if (state.search) {
+        const haystack = [
+          row.date,
+          row.day,
+          MONTHS[Number(row.date.slice(5, 7)) - 1],
+          filtered.highs.map((item) => `${item.type} ${item.time} ${item.height}`).join(" "),
+          filtered.lows.map((item) => `${item.type} ${item.time} ${item.height}`).join(" "),
+          row.notes,
+        ]
+          .join(" ")
+          .toLowerCase();
 
-      if (!haystack.includes(state.search)) return false;
-    }
+        if (!haystack.includes(state.search)) return false;
+      }
 
-    return true;
-  }).map((row) => filterRowEvents(row, state.tideFilter));
+      return true;
+    })
+    .map((row) => filterRowEvents(row, state.tideFilter));
 
   state.visibleRows = rows;
   updateSummary();
@@ -462,7 +376,7 @@ function exportCsv() {
     .map((row) => row.map(csvEscape).join(","))
     .join("\r\n");
 
-  downloadBlob(csv, `seasalter-tides-${state.year || elements.yearInput.value}.csv`, "text/csv;charset=utf-8;");
+  downloadBlob(csv, `seasalter-tides-${state.year}.csv`, "text/csv;charset=utf-8;");
 }
 
 function exportXlsx() {
@@ -479,7 +393,7 @@ function exportXlsx() {
 
   XLSX.utils.book_append_sheet(workbook, metadataSheet, "Metadata");
   XLSX.utils.book_append_sheet(workbook, tableSheet, "Tide Table");
-  XLSX.writeFile(workbook, `seasalter-tides-${state.year || elements.yearInput.value}.xlsx`);
+  XLSX.writeFile(workbook, `seasalter-tides-${state.year}.xlsx`);
 }
 
 function buildExportRows(rows) {
@@ -509,30 +423,33 @@ function buildExportRows(rows) {
 
 function buildMetadataRows() {
   return [
-    ["Location", CONFIG.stationLabel],
-    ["Year", String(state.year || elements.yearInput.value)],
+    ["Location", ENGINE_CONFIG.stationLabel],
+    ["Year", String(state.year)],
     ["Units", "Metres"],
-    ["Time zone mode", state.timezoneMode === "utc" ? "UTC" : `${state.responseTimezone || CONFIG.timezone} (local)`],
+    ["Time zone mode", state.timezoneMode === "utc" ? "UTC" : `${ENGINE_CONFIG.timezone} (local)`],
     ["Time format", state.timeFormat === "12" ? "12-hour" : "24-hour"],
     ["Tide filter", labelForTideFilter(state.tideFilter)],
     ["Date range", `${state.startDate || "Year start"} to ${state.endDate || "Year end"}`],
     ["Month filter", state.month === "all" ? "All months" : MONTHS[Number(state.month)]],
     ["Search", state.search || "-"],
-    ["Data source", CONFIG.sourceName],
+    ["Data source", ENGINE_CONFIG.dataSource],
+    ["Reference station", ENGINE_CONFIG.referenceStation],
+    ["Prediction engine", ENGINE_CONFIG.engineName],
     ["Generated", new Date().toLocaleString("en-GB")],
+    ["Notice", "Open-data approximation. Not for navigation."],
   ];
 }
 
 function updateSummary() {
   elements.yearLabel.textContent = state.year ? String(state.year) : "-";
   elements.visibleRowsLabel.textContent = String(state.visibleRows.length);
-  elements.sourceLabel.textContent = CONFIG.sourceName;
+  elements.sourceLabel.textContent = ENGINE_CONFIG.sourceName;
   elements.rowsPill.textContent = `${state.visibleRows.length} rows`;
 
   if (state.loadedFromCache && state.cacheTimestamp) {
     elements.cachePill.textContent = `Cached ${new Date(state.cacheTimestamp).toLocaleDateString("en-GB")}`;
   } else if (state.events.length > 0) {
-    elements.cachePill.textContent = "Fresh API data";
+    elements.cachePill.textContent = "Fresh local engine";
   } else {
     elements.cachePill.textContent = "No cache yet";
   }
@@ -566,7 +483,7 @@ function syncDateInputsForYear(year) {
 }
 
 function formatHeight(height) {
-  return `${Number(height).toFixed(2)} ${CONFIG.units}`;
+  return `${Number(height).toFixed(2)} ${ENGINE_CONFIG.units}`;
 }
 
 function getDateKeyFromEpoch(epochSeconds, options) {
@@ -599,10 +516,6 @@ function formatTimeFromEpoch(epochSeconds, options) {
     minute: "2-digit",
     hour12: options.timeFormat === "12",
   }).format(new Date(epochSeconds * 1000));
-}
-
-function formatIsoDateUtc(date) {
-  return date.toISOString().slice(0, 10);
 }
 
 function labelForTideFilter(value) {
