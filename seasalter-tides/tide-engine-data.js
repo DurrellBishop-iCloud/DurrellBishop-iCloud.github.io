@@ -1,5 +1,5 @@
 export const ENGINE_CONFIG = {
-  appVersion: "v0.8.18",
+  appVersion: "v0.8.19",
   stationName: "Seasalter",
   stationLabel: "Seasalter, Kent",
   referenceStation: "Herne Bay (TICON-4 / CMEMS chart datum station)",

@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.18";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.18";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.19";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.19";
 
 const MONTHS = [
   "January",
@@ -861,6 +861,7 @@ function handleJumpDate() {
   const fullYearEnd = `${targetYear}-12-31`;
 
   state.pendingScrollDate = targetDate;
+  state.calendarScrollKey = "";
 
   if (Number(elements.yearInput.value) !== targetYear) {
     elements.yearInput.value = String(targetYear);
