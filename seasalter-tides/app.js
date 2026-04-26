@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.5";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.5";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.6";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.6";
 
 const MONTHS = [
   "January",
@@ -20,10 +20,12 @@ const CALENDAR_START_HOUR = 8;
 const CALENDAR_END_HOUR = 20;
 const WEEKEND_DAYS = new Set(["Sat", "Sun"]);
 const CALENDAR_LEFT_PAD = 18;
-const CALENDAR_AXIS_WIDTH = 66;
 const CALENDAR_COLUMN_WIDTH = 7;
 const CALENDAR_COLUMN_GAP = 5;
 const CALENDAR_PITCH = CALENDAR_COLUMN_WIDTH + CALENDAR_COLUMN_GAP;
+const CALENDAR_CHART_HEIGHT = 540;
+const CALENDAR_LABEL_TOP = 146;
+const CALENDAR_BOTTOM_PAD = 46;
 const CALENDAR_COLORS = {
   weekend: "#d96f1d",
   high: "#6abfe9",
@@ -49,6 +51,7 @@ const state = {
   loadedFromCache: false,
   cacheTimestamp: null,
   calendarScrollKey: "",
+  calendarScrollSyncing: false,
 };
 
 const elements = {
@@ -74,6 +77,11 @@ const elements = {
   versionPill: document.querySelector("#versionPill"),
   highlightWindow: document.querySelector("#highlightWindow"),
   visualEmptyState: document.querySelector("#visualEmptyState"),
+  calendarPanel: document.querySelector("#calendarPanel"),
+  calendarRangeTop: document.querySelector("#calendarRangeTop"),
+  calendarRangeBottom: document.querySelector("#calendarRangeBottom"),
+  calendarAxisLeft: document.querySelector("#calendarAxisLeft"),
+  calendarAxisRight: document.querySelector("#calendarAxisRight"),
   calendarWrap: document.querySelector("#calendarWrap"),
   calendarGraphic: document.querySelector("#calendarGraphic"),
   emptyState: document.querySelector("#emptyState"),
@@ -135,6 +143,10 @@ function attachEvents() {
     state.highlightWindowHours = Number(elements.highlightWindow.value) || 2;
     renderCalendar();
   });
+
+  elements.calendarRangeTop.addEventListener("input", handleCalendarRangeInput);
+  elements.calendarRangeBottom.addEventListener("input", handleCalendarRangeInput);
+  elements.calendarWrap.addEventListener("scroll", syncCalendarScrollUi);
 
   elements.monthFilter.addEventListener("change", () => {
     state.month = elements.monthFilter.value;
@@ -369,29 +381,34 @@ function renderCalendar() {
   }
 
   elements.visualEmptyState.style.display = hasRows && hasHighs ? "none" : "block";
-  elements.calendarWrap.classList.toggle("is-hidden", !(hasRows && hasHighs));
+  elements.calendarPanel.classList.toggle("is-hidden", !(hasRows && hasHighs));
 
   if (!(hasRows && hasHighs)) {
     state.calendarScrollKey = "";
     elements.calendarGraphic.innerHTML = "";
+    elements.calendarAxisLeft.innerHTML = "";
+    elements.calendarAxisRight.innerHTML = "";
     return;
   }
 
   elements.calendarGraphic.innerHTML = buildCalendarSvg(rows);
+  elements.calendarAxisLeft.innerHTML = buildCalendarAxisMarkup("left");
+  elements.calendarAxisRight.innerHTML = buildCalendarAxisMarkup("right");
+  updateCalendarRangeBounds();
+  syncCalendarScrollUi();
   maybeScrollCalendarToToday(rows);
 }
 
 function buildCalendarSvg(rows) {
-  const chartHeight = 540;
-  const labelTop = 146;
-  const bottomPad = 46;
+  const chartHeight = CALENDAR_CHART_HEIGHT;
+  const labelTop = CALENDAR_LABEL_TOP;
+  const bottomPad = CALENDAR_BOTTOM_PAD;
   const chartWidth = rows.length * CALENDAR_PITCH;
-  const totalWidth = CALENDAR_LEFT_PAD + chartWidth + CALENDAR_AXIS_WIDTH + 18;
+  const totalWidth = CALENDAR_LEFT_PAD + chartWidth + 18;
   const totalHeight = labelTop + chartHeight + bottomPad;
   const middayY = labelTop + timeToY(12, chartHeight);
   const eveningY = labelTop + timeToY(18, chartHeight);
   const chartBottom = labelTop + chartHeight;
-  const axisX = CALENDAR_LEFT_PAD + chartWidth + 12;
   const windowHours = state.highlightWindowHours;
   const labelIndices = pickCalendarLabelIndices(rows);
   const timeOptions = {
@@ -405,9 +422,6 @@ function buildCalendarSvg(rows) {
     hourlyGuides.push(`
       <line x1="${CALENDAR_LEFT_PAD - 2}" y1="${y}" x2="${CALENDAR_LEFT_PAD + chartWidth + 2}" y2="${y}" stroke="rgba(255, 255, 255, 0.96)" stroke-width="2.4" />
       <line x1="${CALENDAR_LEFT_PAD - 2}" y1="${y}" x2="${CALENDAR_LEFT_PAD + chartWidth + 2}" y2="${y}" stroke="rgba(24, 33, 42, 0.04)" stroke-width="0.9" />
-      <text x="${axisX}" y="${y + 4}" fill="rgba(24, 33, 42, 0.76)" font-size="14" font-family="Manrope, system-ui, sans-serif">${escapeHtml(
-        formatAxisLabel(hour)
-      )}</text>
     `);
   }
 
@@ -494,6 +508,17 @@ function buildCalendarSvg(rows) {
   `;
 }
 
+function buildCalendarAxisMarkup(side) {
+  const sideClass = side === "right" ? "calendar-axis-right" : "calendar-axis-left";
+  const labels = [];
+  for (let hour = CALENDAR_END_HOUR; hour >= CALENDAR_START_HOUR; hour -= 1) {
+    labels.push(
+      `<div class="calendar-axis-label"><span>${escapeHtml(formatAxisLabel(hour))}</span></div>`
+    );
+  }
+  return `<div class="${sideClass}">${labels.join("")}</div>`;
+}
+
 function maybeScrollCalendarToToday(rows) {
   const today = getTodayDateKey({
     timezoneMode: state.timezoneMode,
@@ -514,7 +539,34 @@ function maybeScrollCalendarToToday(rows) {
     const targetIndex = todayIndex >= 0 ? todayIndex : 0;
     const targetLeft = Math.max(0, targetIndex * CALENDAR_PITCH - 8);
     elements.calendarWrap.scrollLeft = targetLeft;
+    syncCalendarScrollUi();
   });
+}
+
+function updateCalendarRangeBounds() {
+  const max = Math.max(0, Math.round(elements.calendarWrap.scrollWidth - elements.calendarWrap.clientWidth));
+  elements.calendarRangeTop.max = String(max);
+  elements.calendarRangeBottom.max = String(max);
+  elements.calendarRangeTop.disabled = max === 0;
+  elements.calendarRangeBottom.disabled = max === 0;
+}
+
+function handleCalendarRangeInput(event) {
+  const next = Number(event.target.value) || 0;
+  state.calendarScrollSyncing = true;
+  elements.calendarWrap.scrollLeft = next;
+  elements.calendarRangeTop.value = String(next);
+  elements.calendarRangeBottom.value = String(next);
+  state.calendarScrollSyncing = false;
+}
+
+function syncCalendarScrollUi() {
+  if (state.calendarScrollSyncing) {
+    return;
+  }
+  const left = Math.round(elements.calendarWrap.scrollLeft);
+  elements.calendarRangeTop.value = String(left);
+  elements.calendarRangeBottom.value = String(left);
 }
 
 function pickCalendarLabelIndices(rows) {

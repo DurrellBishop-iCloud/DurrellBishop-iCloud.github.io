@@ -319,22 +319,11 @@ button:disabled {
   border: 0;
   border-radius: 0;
   background: transparent;
-}
-
-.calendar-wrap.is-hidden {
-  display: none;
+  scrollbar-width: none;
 }
 
 .calendar-wrap::-webkit-scrollbar {
-  height: 14px;
-}
-
-.calendar-wrap::-webkit-scrollbar-track {
-  background: rgba(24, 33, 42, 0.06);
-}
-
-.calendar-wrap::-webkit-scrollbar-thumb {
-  background: rgba(24, 33, 42, 0.22);
+  display: none;
 }
 
 .calendar-graphic {
@@ -344,6 +333,100 @@ button:disabled {
 
 .calendar-svg {
   display: block;
+}
+
+.calendar-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.calendar-panel.is-hidden {
+  display: none;
+}
+
+.calendar-stage {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 36px;
+  align-items: start;
+  gap: 0;
+}
+
+.calendar-axis {
+  display: grid;
+  align-content: start;
+  min-height: 620px;
+  padding-top: 150px;
+  font-size: 0.78rem;
+  color: rgba(24, 33, 42, 0.82);
+  user-select: none;
+}
+
+.calendar-axis-left {
+  text-align: left;
+}
+
+.calendar-axis-right {
+  text-align: right;
+}
+
+.calendar-axis-label {
+  position: relative;
+  height: 45px;
+  line-height: 1;
+}
+
+.calendar-axis-label span {
+  position: absolute;
+  top: -6px;
+}
+
+.calendar-axis-left .calendar-axis-label span {
+  left: 0;
+}
+
+.calendar-axis-right .calendar-axis-label span {
+  right: 0;
+}
+
+.calendar-scroller {
+  padding: 0 36px;
+}
+
+.calendar-range {
+  width: 100%;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+.calendar-range::-webkit-slider-runnable-track {
+  height: 18px;
+  background: rgba(24, 33, 42, 0.14);
+}
+
+.calendar-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 62px;
+  height: 18px;
+  margin-top: 0;
+  background: rgba(24, 33, 42, 0.28);
+}
+
+.calendar-range::-moz-range-track {
+  height: 18px;
+  background: rgba(24, 33, 42, 0.14);
+  border: 0;
+}
+
+.calendar-range::-moz-range-thumb {
+  width: 62px;
+  height: 18px;
+  border: 0;
+  border-radius: 0;
+  background: rgba(24, 33, 42, 0.28);
 }
 
 .table-wrap {
@@ -479,6 +562,20 @@ button:disabled {
   .calendar-graphic {
     min-height: 520px;
     padding: 4px 0 0;
+  }
+
+  .calendar-stage {
+    grid-template-columns: 30px minmax(0, 1fr) 30px;
+  }
+
+  .calendar-axis {
+    min-height: 520px;
+    padding-top: 150px;
+    font-size: 0.72rem;
+  }
+
+  .calendar-scroller {
+    padding: 0 30px;
   }
 
   .tide-table {
