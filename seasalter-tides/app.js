@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.13";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.13";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.14";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.14";
 
 const MONTHS = [
   "January",
@@ -648,7 +648,7 @@ function pickCalendarLabelIndices(rows) {
   const picked = new Set();
   let lastPicked = -99;
   const minimumGap = 3;
-  let skipSaturdayUntil = -1;
+  let forceNextSaturday = false;
 
   rows.forEach((row, index) => {
     const isEdge = index === 0 || index === rows.length - 1;
@@ -657,7 +657,7 @@ function pickCalendarLabelIndices(rows) {
     if (isMonthStart) {
       picked.add(index);
       lastPicked = index;
-      skipSaturdayUntil = index + 7;
+      forceNextSaturday = !isSaturday;
       return;
     }
 
@@ -668,7 +668,10 @@ function pickCalendarLabelIndices(rows) {
     }
 
     if (isSaturday) {
-      if (index <= skipSaturdayUntil) {
+      if (forceNextSaturday) {
+        picked.add(index);
+        lastPicked = index;
+        forceNextSaturday = false;
         return;
       }
       if (index - lastPicked >= minimumGap) {
