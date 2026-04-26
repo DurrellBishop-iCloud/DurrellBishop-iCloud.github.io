@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=0.8.4">
+  <link rel="stylesheet" href="./styles.css?v=0.8.5">
 </head>
 <body>
   <div class="page-shell">
@@ -20,6 +20,17 @@
     </header>
 
     <main class="layout">
+      <section class="card visual-card">
+        <div id="visualEmptyState" class="empty-state">
+          <h3>No calendar drawn yet</h3>
+          <p>Generate a date range and the app will draw a thin-line high-tide calendar from 8am to 8pm.</p>
+        </div>
+
+        <div id="calendarWrap" class="calendar-wrap is-hidden">
+          <div id="calendarGraphic" class="calendar-graphic" aria-live="polite"></div>
+        </div>
+      </section>
+
       <section class="card controls-card">
         <div class="card-head">
           <div>
@@ -113,17 +124,6 @@
         </div>
       </section>
 
-      <section class="card visual-card">
-        <div id="visualEmptyState" class="empty-state">
-          <h3>No calendar drawn yet</h3>
-          <p>Generate a date range and the app will draw a thin-line high-tide calendar from 8am to 8pm.</p>
-        </div>
-
-        <div id="calendarWrap" class="calendar-wrap is-hidden">
-          <div id="calendarGraphic" class="calendar-graphic" aria-live="polite"></div>
-        </div>
-      </section>
-
       <section class="card table-card">
         <div class="card-head">
           <div>
@@ -148,6 +148,6 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./app.js?v=0.8.4"></script>
+  <script type="module" src="./app.js?v=0.8.5"></script>
 </body>
 </html>
