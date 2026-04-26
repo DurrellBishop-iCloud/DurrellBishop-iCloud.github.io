@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Seasalter Tide Table</title>
+  <meta
+    name="description"
+    content="Generate a spreadsheet-style tide table for Seasalter, filter it online, and export CSV or Excel."
+  >
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="page-shell">
+    <header class="hero">
+      <p class="eyebrow">dbgh.uk / tides</p>
+      <h1>Seasalter Year Tide Table</h1>
+      <p class="hero-copy">
+        Build a full-year tide table for Seasalter, preview it in a spreadsheet-style grid, and export the current view as CSV or Excel.
+      </p>
+      <div class="hero-meta">
+        <span>Location: Seasalter, Kent</span>
+        <span>Data basis: live WorldTides API lookup at Seasalter coordinates</span>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="card controls-card">
+        <div class="card-head">
+          <div>
+            <p class="kicker">Setup</p>
+            <h2>Generate tide data</h2>
+          </div>
+          <a class="text-link" href="https://www.worldtides.info/developer" target="_blank" rel="noreferrer">Get an API key</a>
+        </div>
+
+        <form id="controls-form" class="controls-grid">
+          <label class="field field-wide">
+            <span>WorldTides API key</span>
+            <div class="secret-input">
+              <input id="apiKey" name="apiKey" type="password" autocomplete="off" placeholder="Paste your key">
+              <button id="toggleApiKey" type="button" class="ghost-button">Show</button>
+            </div>
+            <small>Saved in this browser only. A leap year needs about 53 weekly API calls.</small>
+          </label>
+
+          <label class="field">
+            <span>Year</span>
+            <input id="yearInput" name="year" type="number" min="2000" max="2100" step="1">
+          </label>
+
+          <label class="field">
+            <span>Time zone</span>
+            <select id="timezoneMode" name="timezoneMode">
+              <option value="local">Local time</option>
+              <option value="utc">UTC</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Time format</span>
+            <select id="timeFormat" name="timeFormat">
+              <option value="24">24-hour</option>
+              <option value="12">12-hour</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Tide filter</span>
+            <select id="tideFilter" name="tideFilter">
+              <option value="both">High and low</option>
+              <option value="high">High only</option>
+              <option value="low">Low only</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Month</span>
+            <select id="monthFilter" name="monthFilter">
+              <option value="all">All months</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>Start date</span>
+            <input id="startDate" name="startDate" type="date">
+          </label>
+
+          <label class="field">
+            <span>End date</span>
+            <input id="endDate" name="endDate" type="date">
+          </label>
+
+          <label class="field field-wide">
+            <span>Search within the table</span>
+            <input id="searchInput" name="searchInput" type="search" placeholder="Try Apr, Sunday, 05:30, high">
+          </label>
+
+          <div class="actions field-wide">
+            <button id="generateButton" type="submit" class="primary-button">Generate year table</button>
+            <button id="refreshButton" type="button" class="secondary-button">Refresh from API</button>
+            <button id="csvButton" type="button" class="secondary-button" disabled>Export CSV</button>
+            <button id="xlsxButton" type="button" class="secondary-button" disabled>Export Excel</button>
+          </div>
+        </form>
+
+        <div class="status-row">
+          <p id="statusMessage" class="status-message" aria-live="polite">Enter your API key and choose a year to load the table.</p>
+          <div class="status-pills">
+            <span class="pill" id="cachePill">No cache yet</span>
+            <span class="pill" id="rowsPill">0 rows</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="card summary-card">
+        <div class="card-head">
+          <div>
+            <p class="kicker">Summary</p>
+            <h2>Current view</h2>
+          </div>
+        </div>
+
+        <dl class="summary-grid">
+          <div>
+            <dt>Station</dt>
+            <dd>Seasalter</dd>
+          </div>
+          <div>
+            <dt>Coordinates</dt>
+            <dd>51.3490, 1.0049</dd>
+          </div>
+          <div>
+            <dt>Units</dt>
+            <dd>Metres</dd>
+          </div>
+          <div>
+            <dt>Source</dt>
+            <dd id="sourceLabel">WorldTides API</dd>
+          </div>
+          <div>
+            <dt>Year</dt>
+            <dd id="yearLabel">-</dd>
+          </div>
+          <div>
+            <dt>Visible rows</dt>
+            <dd id="visibleRowsLabel">0</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section class="card table-card">
+        <div class="card-head">
+          <div>
+            <p class="kicker">Preview</p>
+            <h2>Spreadsheet view</h2>
+          </div>
+        </div>
+
+        <div id="emptyState" class="empty-state">
+          <h3>No tide table loaded yet</h3>
+          <p>The app will group tide events by day and lay them out into export-friendly columns.</p>
+        </div>
+
+        <div id="tableWrap" class="table-wrap is-hidden">
+          <table id="tideTable" class="tide-table">
+            <thead id="tideTableHead"></thead>
+            <tbody id="tideTableBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
