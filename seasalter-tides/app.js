@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.8";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.8";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.9";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.9";
 
 const MONTHS = [
   "January",
@@ -54,6 +54,9 @@ const state = {
   cacheTimestamp: null,
   calendarScrollKey: "",
   calendarScrollSyncing: false,
+  calendarDayLayouts: [],
+  pendingScrollDate: "",
+  resizeFrame: 0,
 };
 
 const elements = {
@@ -78,6 +81,10 @@ const elements = {
   sourceLabel: document.querySelector("#sourceLabel"),
   versionPill: document.querySelector("#versionPill"),
   highlightWindow: document.querySelector("#highlightWindow"),
+  jumpDateInput: document.querySelector("#jumpDateInput"),
+  jumpDateButton: document.querySelector("#jumpDateButton"),
+  calendarLeadDateTop: document.querySelector("#calendarLeadDateTop"),
+  calendarLeadDateBottom: document.querySelector("#calendarLeadDateBottom"),
   visualEmptyState: document.querySelector("#visualEmptyState"),
   calendarPanel: document.querySelector("#calendarPanel"),
   calendarRangeTop: document.querySelector("#calendarRangeTop"),
@@ -102,6 +109,10 @@ function init() {
 
   populateMonthFilter();
   syncDateInputsForYear(defaultYear);
+  elements.jumpDateInput.value = getTodayDateKey({
+    timezoneMode: "local",
+    timeZone: ENGINE_CONFIG.timezone,
+  });
   attachEvents();
   updateSummary();
   renderCalendar();
@@ -146,9 +157,12 @@ function attachEvents() {
     renderCalendar();
   });
 
+  elements.jumpDateButton.addEventListener("click", handleJumpDate);
+  elements.jumpDateInput.addEventListener("change", handleJumpDate);
   elements.calendarRangeTop.addEventListener("input", handleCalendarRangeInput);
   elements.calendarRangeBottom.addEventListener("input", handleCalendarRangeInput);
   elements.calendarWrap.addEventListener("scroll", syncCalendarScrollUi);
+  window.addEventListener("resize", handleWindowResize);
 
   elements.monthFilter.addEventListener("change", () => {
     state.month = elements.monthFilter.value;
@@ -387,13 +401,20 @@ function renderCalendar() {
 
   if (!(hasRows && hasHighs)) {
     state.calendarScrollKey = "";
+    state.calendarDayLayouts = [];
     elements.calendarGraphic.innerHTML = "";
     elements.calendarAxisLeft.innerHTML = "";
     elements.calendarAxisRight.innerHTML = "";
+    setCalendarLeadDate("Left edge -");
     return;
   }
 
-  elements.calendarGraphic.innerHTML = buildCalendarSvg(rows);
+  const calendarView = buildCalendarSvg(rows);
+  state.calendarDayLayouts = calendarView.dayLayouts;
+  elements.calendarPanel.style.setProperty("--calendar-total-height", `${calendarView.totalHeight}px`);
+  elements.calendarPanel.style.setProperty("--calendar-label-top", `${calendarView.labelTop}px`);
+  elements.calendarPanel.style.setProperty("--calendar-hour-height", `${calendarView.hourHeight}px`);
+  elements.calendarGraphic.innerHTML = calendarView.svg;
   elements.calendarAxisLeft.innerHTML = buildCalendarAxisMarkup("left");
   elements.calendarAxisRight.innerHTML = buildCalendarAxisMarkup("right");
   updateCalendarRangeBounds();
@@ -402,9 +423,7 @@ function renderCalendar() {
 }
 
 function buildCalendarSvg(rows) {
-  const chartHeight = CALENDAR_CHART_HEIGHT;
-  const labelTop = CALENDAR_LABEL_TOP;
-  const bottomPad = CALENDAR_BOTTOM_PAD;
+  const { chartHeight, labelTop, bottomPad } = getCalendarMetrics();
   const timeOptions = {
     timezoneMode: state.timezoneMode,
     timeZone: ENGINE_CONFIG.timezone,
@@ -513,7 +532,8 @@ function buildCalendarSvg(rows) {
 
   const title = `${ENGINE_CONFIG.stationLabel} high tide calendar, ${CALENDAR_START_HOUR}am to ${CALENDAR_END_HOUR - 12}pm`;
 
-  return `
+  return {
+    svg: `
     <svg
       class="calendar-svg"
       xmlns="http://www.w3.org/2000/svg"
@@ -527,7 +547,13 @@ function buildCalendarSvg(rows) {
       ${hourlyGuides.join("")}
       ${dayColumns.join("")}
     </svg>
-  `;
+    `,
+    chartHeight,
+    labelTop,
+    totalHeight,
+    hourHeight: chartHeight / (CALENDAR_END_HOUR - CALENDAR_START_HOUR),
+    dayLayouts,
+  };
 }
 
 function buildCalendarDayLayouts(rows, timeOptions) {
@@ -559,8 +585,14 @@ function maybeScrollCalendarToToday(rows) {
     timezoneMode: state.timezoneMode,
     timeZone: ENGINE_CONFIG.timezone,
   });
-  const todayIndex = rows.findIndex((row) => row.date === today);
-  const rowAnchor = todayIndex >= 0 ? today : rows[0]?.date || "";
+  const requestedAnchor = state.pendingScrollDate;
+  const targetDate = rows.some((row) => row.date === requestedAnchor)
+    ? requestedAnchor
+    : rows.some((row) => row.date === today)
+      ? today
+      : rows[0]?.date || "";
+  const targetIndex = rows.findIndex((row) => row.date === targetDate);
+  const rowAnchor = targetDate;
   const lastRow = rows.length > 0 ? rows[rows.length - 1] : null;
   const scrollKey = `${rows[0]?.date || ""}|${lastRow?.date || ""}|${rows.length}|${rowAnchor}|${state.timezoneMode}`;
 
@@ -571,13 +603,12 @@ function maybeScrollCalendarToToday(rows) {
   state.calendarScrollKey = scrollKey;
 
   requestAnimationFrame(() => {
-    const dayLayouts = buildCalendarDayLayouts(rows, {
-      timezoneMode: state.timezoneMode,
-      timeZone: ENGINE_CONFIG.timezone,
-    });
-    const targetIndex = todayIndex >= 0 ? todayIndex : 0;
-    const targetLeft = Math.max(0, (dayLayouts[targetIndex]?.x || CALENDAR_LEFT_PAD) - CALENDAR_LEFT_PAD - 8);
+    const targetLeft = Math.max(
+      0,
+      (state.calendarDayLayouts[targetIndex >= 0 ? targetIndex : 0]?.x || CALENDAR_LEFT_PAD) - CALENDAR_LEFT_PAD - 8
+    );
     elements.calendarWrap.scrollLeft = targetLeft;
+    state.pendingScrollDate = "";
     syncCalendarScrollUi();
   });
 }
@@ -606,6 +637,7 @@ function syncCalendarScrollUi() {
   const left = Math.round(elements.calendarWrap.scrollLeft);
   elements.calendarRangeTop.value = String(left);
   elements.calendarRangeBottom.value = String(left);
+  updateCalendarLeadDate();
 }
 
 function pickCalendarLabelIndices(rows) {
@@ -810,6 +842,74 @@ function updateSummary() {
   }
 }
 
+function handleJumpDate() {
+  const targetDate = elements.jumpDateInput.value;
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(targetDate)) {
+    return;
+  }
+
+  const targetYear = Number(targetDate.slice(0, 4));
+  const fullYearStart = `${targetYear}-01-01`;
+  const fullYearEnd = `${targetYear}-12-31`;
+
+  state.pendingScrollDate = targetDate;
+
+  if (Number(elements.yearInput.value) !== targetYear) {
+    elements.yearInput.value = String(targetYear);
+    elements.monthFilter.value = "all";
+    elements.searchInput.value = "";
+    syncDateInputsForYear(targetYear);
+    elements.jumpDateInput.value = targetDate;
+    elements.startDate.value = fullYearStart;
+    elements.endDate.value = fullYearEnd;
+    generateTable({ forceRefresh: false });
+    return;
+  }
+
+  let needsRefilter = false;
+
+  if (elements.monthFilter.value !== "all") {
+    elements.monthFilter.value = "all";
+    state.month = "all";
+    needsRefilter = true;
+  }
+
+  if (elements.searchInput.value) {
+    elements.searchInput.value = "";
+    state.search = "";
+    needsRefilter = true;
+  }
+
+  if (elements.startDate.value > targetDate || elements.endDate.value < targetDate) {
+    elements.startDate.value = fullYearStart;
+    elements.endDate.value = fullYearEnd;
+    state.startDate = fullYearStart;
+    state.endDate = fullYearEnd;
+    needsRefilter = true;
+  }
+
+  if (needsRefilter) {
+    applyFiltersAndRender();
+    return;
+  }
+
+  maybeScrollCalendarToToday(state.calendarRows);
+}
+
+function handleWindowResize() {
+  if (state.resizeFrame) {
+    cancelAnimationFrame(state.resizeFrame);
+  }
+
+  state.resizeFrame = requestAnimationFrame(() => {
+    state.resizeFrame = 0;
+    if (state.calendarRows.length > 0) {
+      renderCalendar();
+    }
+  });
+}
+
 function setBusy(isBusy) {
   elements.generateButton.disabled = isBusy;
   elements.refreshButton.disabled = isBusy;
@@ -837,8 +937,18 @@ function syncDateInputsForYear(year) {
   const end = `${year}-12-31`;
   elements.startDate.value = start;
   elements.endDate.value = end;
+  elements.jumpDateInput.value = start;
   state.startDate = start;
   state.endDate = end;
+}
+
+function getCalendarMetrics() {
+  const isPhone = window.matchMedia("(max-width: 760px)").matches;
+  return {
+    chartHeight: isPhone ? 700 : CALENDAR_CHART_HEIGHT,
+    labelTop: isPhone ? 156 : CALENDAR_LABEL_TOP,
+    bottomPad: isPhone ? 52 : CALENDAR_BOTTOM_PAD,
+  };
 }
 
 function formatHeight(height) {
@@ -885,6 +995,20 @@ function getHourValueFromEpoch(epochSeconds, options) {
 
 function getTodayDateKey(options) {
   return getDateKeyFromDate(new Date(), options);
+}
+
+function updateCalendarLeadDate() {
+  if (state.calendarDayLayouts.length === 0) {
+    setCalendarLeadDate("Left edge -");
+    return;
+  }
+
+  const visibleX = elements.calendarWrap.scrollLeft + CALENDAR_LEFT_PAD;
+  const leadLayout =
+    state.calendarDayLayouts.find((layout) => layout.x + layout.width >= visibleX) ||
+    state.calendarDayLayouts[state.calendarDayLayouts.length - 1];
+
+  setCalendarLeadDate(`Left edge: ${formatLongDate(leadLayout.row)}`);
 }
 
 function getSunsetHourForDate(dateKey, options) {
@@ -936,6 +1060,18 @@ function getDateKeyFromDate(date, options) {
 
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
+}
+
+function formatLongDate(row) {
+  const day = String(Number(row.date.slice(8, 10)));
+  const month = MONTHS[Number(row.date.slice(5, 7)) - 1].slice(0, 3);
+  const year = row.date.slice(0, 4);
+  return `${row.day} ${day} ${month} ${year}`;
+}
+
+function setCalendarLeadDate(text) {
+  elements.calendarLeadDateTop.textContent = text;
+  elements.calendarLeadDateBottom.textContent = text;
 }
 
 function getHourValueFromDate(date, options) {

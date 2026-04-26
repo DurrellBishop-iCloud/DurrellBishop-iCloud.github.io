@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=0.8.8">
+  <link rel="stylesheet" href="./styles.css?v=0.8.9">
 </head>
 <body>
   <div class="page-shell">
@@ -21,6 +21,16 @@
 
     <main class="layout">
       <section class="card visual-card">
+        <div class="calendar-tools" aria-label="Calendar tools">
+          <label class="calendar-jump">
+            <span>Date</span>
+            <input id="jumpDateInput" type="date">
+          </label>
+          <button id="jumpDateButton" class="secondary-button" type="button">Go to date</button>
+        </div>
+
+        <p id="calendarLeadDateTop" class="calendar-position-line">Left edge -</p>
+
         <div id="visualEmptyState" class="empty-state">
           <h3>No calendar drawn yet</h3>
           <p>Generate a date range and the app will draw a thin-line high-tide calendar from 8am to 8pm.</p>
@@ -43,6 +53,8 @@
             <input id="calendarRangeBottom" class="calendar-range" type="range" min="0" max="0" value="0" step="1" aria-label="Scroll tide calendar">
           </div>
         </div>
+
+        <p id="calendarLeadDateBottom" class="calendar-position-line">Left edge -</p>
       </section>
 
       <section class="card controls-card">
@@ -162,6 +174,6 @@
   </div>
 
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-  <script type="module" src="./app.js?v=0.8.8"></script>
+  <script type="module" src="./app.js?v=0.8.9"></script>
 </body>
 </html>
