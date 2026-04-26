@@ -373,11 +373,11 @@ function renderCalendar() {
 
 function buildCalendarSvg(rows) {
   const chartHeight = 540;
-  const labelTop = 78;
-  const bottomPad = 42;
+  const labelTop = 118;
+  const bottomPad = 46;
   const leftPad = 18;
   const axisWidth = 66;
-  const columnWidth = 8;
+  const columnWidth = 7;
   const columnGap = 5;
   const pitch = columnWidth + columnGap;
   const chartWidth = rows.length * pitch;
@@ -388,6 +388,7 @@ function buildCalendarSvg(rows) {
   const chartBottom = labelTop + chartHeight;
   const axisX = leftPad + chartWidth + 12;
   const windowHours = state.highlightWindowHours;
+  const labelIndices = pickCalendarLabelIndices(rows);
   const timeOptions = {
     timezoneMode: state.timezoneMode,
     timeZone: ENGINE_CONFIG.timezone,
@@ -397,7 +398,8 @@ function buildCalendarSvg(rows) {
   for (let hour = CALENDAR_END_HOUR; hour >= CALENDAR_START_HOUR; hour -= 1) {
     const y = labelTop + timeToY(hour, chartHeight);
     hourlyGuides.push(`
-      <line x1="${leftPad - 2}" y1="${y}" x2="${leftPad + chartWidth + 2}" y2="${y}" stroke="rgba(24, 33, 42, 0.06)" stroke-width="1" />
+      <line x1="${leftPad - 2}" y1="${y}" x2="${leftPad + chartWidth + 2}" y2="${y}" stroke="rgba(255, 255, 255, 0.96)" stroke-width="2.4" />
+      <line x1="${leftPad - 2}" y1="${y}" x2="${leftPad + chartWidth + 2}" y2="${y}" stroke="rgba(24, 33, 42, 0.04)" stroke-width="0.9" />
       <text x="${axisX}" y="${y + 4}" fill="rgba(24, 33, 42, 0.76)" font-size="14" font-family="Manrope, system-ui, sans-serif">${escapeHtml(
         formatAxisLabel(hour)
       )}</text>
@@ -407,13 +409,13 @@ function buildCalendarSvg(rows) {
   const dayColumns = rows.map((row, index) => {
     const x = leftPad + index * pitch;
     const isWeekend = WEEKEND_DAYS.has(row.day);
-    const showLabel = shouldShowCalendarLabel(row, index, rows.length);
+    const showLabel = labelIndices.has(index);
     const label = showLabel
       ? `
         <text
           x="${x + columnWidth - 1}"
-          y="${labelTop - 10}"
-          transform="rotate(-90 ${x + columnWidth - 1} ${labelTop - 10})"
+          y="${labelTop - 26}"
+          transform="rotate(-90 ${x + columnWidth - 1} ${labelTop - 26})"
           fill="${isWeekend ? CALENDAR_COLORS.weekend : "rgba(24, 33, 42, 0.74)"}"
           font-size="14"
           font-weight="${isWeekend ? 800 : 700}"
@@ -424,8 +426,8 @@ function buildCalendarSvg(rows) {
 
     const weekendCaps = isWeekend
       ? `
-        <rect x="${x}" y="${labelTop - 22}" width="${columnWidth}" height="10" rx="2" fill="${CALENDAR_COLORS.weekend}" />
-        <rect x="${x}" y="${chartBottom + 10}" width="${columnWidth}" height="10" rx="2" fill="${CALENDAR_COLORS.weekend}" />
+        <rect x="${x + 1}" y="${labelTop - 16}" width="${columnWidth - 1}" height="9" fill="${CALENDAR_COLORS.weekend}" />
+        <rect x="${x + 1}" y="${chartBottom + 12}" width="${columnWidth - 1}" height="9" fill="${CALENDAR_COLORS.weekend}" />
       `
       : "";
 
@@ -444,13 +446,12 @@ function buildCalendarSvg(rows) {
 
         return `
           <rect
-            x="${x - 1}"
-            y="${y}"
-            width="${columnWidth + 2}"
-            height="${height}"
-            rx="3"
+            x="${x + 1}"
+            y="${y + 1}"
+            width="${columnWidth - 2}"
+            height="${Math.max(0, height - 2)}"
             fill="${CALENDAR_COLORS.high}"
-            opacity="0.96"
+            opacity="0.92"
           />
         `;
       })
@@ -464,7 +465,7 @@ function buildCalendarSvg(rows) {
         <rect x="${x}" y="${labelTop}" width="${columnWidth}" height="${eveningY - labelTop}" fill="${CALENDAR_COLORS.evening}" opacity="0.72" />
         <rect x="${x}" y="${middayY}" width="${columnWidth}" height="${chartBottom - middayY}" fill="${CALENDAR_COLORS.morning}" />
         ${highlights}
-        <rect x="${x + 3}" y="${labelTop}" width="2" height="${chartHeight}" rx="1" fill="${isWeekend ? "rgba(217, 111, 29, 0.58)" : "rgba(90, 100, 108, 0.18)"}" />
+        <rect x="${x + 3}" y="${labelTop}" width="1.4" height="${chartHeight}" fill="${isWeekend ? "rgba(217, 111, 29, 0.56)" : "rgba(90, 100, 108, 0.16)"}" />
       </g>
     `;
   });
@@ -488,10 +489,26 @@ function buildCalendarSvg(rows) {
   `;
 }
 
-function shouldShowCalendarLabel(row, index, totalRows) {
-  if (index === 0 || index === totalRows - 1) return true;
-  if (row.date.slice(8, 10) === "01") return true;
-  return row.day === "Sat";
+function pickCalendarLabelIndices(rows) {
+  const picked = new Set();
+  let lastPicked = -99;
+  const minimumGap = 4;
+
+  rows.forEach((row, index) => {
+    const isEdge = index === 0 || index === rows.length - 1;
+    const isMonthStart = row.date.slice(8, 10) === "01";
+    const isSaturday = row.day === "Sat";
+    if (!isEdge && !isMonthStart && !isSaturday) {
+      return;
+    }
+
+    if (isEdge || index - lastPicked >= minimumGap) {
+      picked.add(index);
+      lastPicked = index;
+    }
+  });
+
+  return picked;
 }
 
 function formatCalendarLabel(row) {
