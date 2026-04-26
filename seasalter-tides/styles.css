@@ -139,8 +139,15 @@ body::before {
   margin-bottom: 10px;
 }
 
+.today-button {
+  min-height: 36px;
+  padding: 0 12px;
+  line-height: 1;
+}
+
 .calendar-jump {
   display: grid;
+  flex: 1 1 auto;
   gap: 6px;
   min-width: 190px;
 }
@@ -625,8 +632,9 @@ button:disabled {
   }
 
   .calendar-tools {
-    align-items: stretch;
-    flex-direction: column;
+    align-items: end;
+    flex-direction: row;
+    gap: 10px;
   }
 
   .calendar-jump {

@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.15";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.15";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.16";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.16";
 
 const MONTHS = [
   "January",
@@ -81,8 +81,8 @@ const elements = {
   sourceLabel: document.querySelector("#sourceLabel"),
   versionPill: document.querySelector("#versionPill"),
   highlightWindow: document.querySelector("#highlightWindow"),
+  todayButton: document.querySelector("#todayButton"),
   jumpDateInput: document.querySelector("#jumpDateInput"),
-  jumpDateButton: document.querySelector("#jumpDateButton"),
   calendarLeadDateTop: document.querySelector("#calendarLeadDateTop"),
   calendarLeadDateBottom: document.querySelector("#calendarLeadDateBottom"),
   visualEmptyState: document.querySelector("#visualEmptyState"),
@@ -157,7 +157,7 @@ function attachEvents() {
     renderCalendar();
   });
 
-  elements.jumpDateButton.addEventListener("click", handleJumpDate);
+  elements.todayButton.addEventListener("click", handleTodayJump);
   elements.jumpDateInput.addEventListener("change", handleJumpDate);
   elements.calendarRangeTop.addEventListener("input", handleCalendarRangeInput);
   elements.calendarRangeBottom.addEventListener("input", handleCalendarRangeInput);
@@ -405,7 +405,7 @@ function renderCalendar() {
     elements.calendarGraphic.innerHTML = "";
     elements.calendarAxisLeft.innerHTML = "";
     elements.calendarAxisRight.innerHTML = "";
-    setCalendarLeadDate("Left edge -");
+    setCalendarLeadDate("");
     return;
   }
 
@@ -904,6 +904,14 @@ function handleJumpDate() {
   maybeScrollCalendarToToday(state.calendarRows);
 }
 
+function handleTodayJump() {
+  elements.jumpDateInput.value = getTodayDateKey({
+    timezoneMode: "local",
+    timeZone: ENGINE_CONFIG.timezone,
+  });
+  handleJumpDate();
+}
+
 function handleWindowResize() {
   if (state.resizeFrame) {
     cancelAnimationFrame(state.resizeFrame);
@@ -1006,7 +1014,7 @@ function getTodayDateKey(options) {
 
 function updateCalendarLeadDate() {
   if (state.calendarDayLayouts.length === 0) {
-    setCalendarLeadDate("Left edge -");
+    setCalendarLeadDate("");
     return;
   }
 
@@ -1015,7 +1023,7 @@ function updateCalendarLeadDate() {
     state.calendarDayLayouts.find((layout) => layout.x + layout.width >= visibleX) ||
     state.calendarDayLayouts[state.calendarDayLayouts.length - 1];
 
-  setCalendarLeadDate(`Left edge: ${formatLongDate(leadLayout.row)}`);
+  setCalendarLeadDate(formatLongDate(leadLayout.row));
 }
 
 function getSunsetHourForDate(dateKey, options) {
