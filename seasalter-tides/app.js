@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.7";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.7";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.8";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.8";
 
 const MONTHS = [
   "January",
@@ -19,19 +19,21 @@ const MONTHS = [
 const CALENDAR_START_HOUR = 8;
 const CALENDAR_END_HOUR = 20;
 const WEEKEND_DAYS = new Set(["Sat", "Sun"]);
+const STATION_COORDS = { lat: 51.349, lon: 1.0049 };
 const CALENDAR_LEFT_PAD = 18;
-const CALENDAR_COLUMN_WIDTH = 7;
+const CALENDAR_WEEKEND_WIDTH = 7;
+const CALENDAR_WEEKDAY_WIDTH = 3.5;
 const CALENDAR_COLUMN_GAP = 5;
-const CALENDAR_PITCH = CALENDAR_COLUMN_WIDTH + CALENDAR_COLUMN_GAP;
 const CALENDAR_CHART_HEIGHT = 540;
 const CALENDAR_LABEL_TOP = 146;
 const CALENDAR_BOTTOM_PAD = 46;
 const CALENDAR_COLORS = {
   weekend: "#d96f1d",
+  monthStart: "rgba(95, 104, 114, 0.72)",
   high: "#6abfe9",
   morning: "rgba(191, 226, 233, 0.72)",
   afternoon: "rgba(246, 241, 223, 0.84)",
-  evening: "rgba(95, 104, 114, 0.18)",
+  sundown: "rgba(95, 104, 114, 0.18)",
 };
 
 const state = {
@@ -403,18 +405,20 @@ function buildCalendarSvg(rows) {
   const chartHeight = CALENDAR_CHART_HEIGHT;
   const labelTop = CALENDAR_LABEL_TOP;
   const bottomPad = CALENDAR_BOTTOM_PAD;
-  const chartWidth = rows.length * CALENDAR_PITCH;
-  const totalWidth = CALENDAR_LEFT_PAD + chartWidth + 18;
-  const totalHeight = labelTop + chartHeight + bottomPad;
-  const middayY = labelTop + timeToY(12, chartHeight);
-  const eveningY = labelTop + timeToY(18, chartHeight);
-  const chartBottom = labelTop + chartHeight;
-  const windowHours = state.highlightWindowHours;
-  const labelIndices = pickCalendarLabelIndices(rows);
   const timeOptions = {
     timezoneMode: state.timezoneMode,
     timeZone: ENGINE_CONFIG.timezone,
   };
+  const dayLayouts = buildCalendarDayLayouts(rows, timeOptions);
+  const chartWidth = dayLayouts.length === 0
+    ? 0
+    : dayLayouts[dayLayouts.length - 1].x + dayLayouts[dayLayouts.length - 1].width - CALENDAR_LEFT_PAD;
+  const totalWidth = CALENDAR_LEFT_PAD + chartWidth + 18;
+  const totalHeight = labelTop + chartHeight + bottomPad;
+  const middayY = labelTop + timeToY(12, chartHeight);
+  const chartBottom = labelTop + chartHeight;
+  const windowHours = state.highlightWindowHours;
+  const labelIndices = pickCalendarLabelIndices(rows);
 
   const hourlyGuides = [];
   for (let hour = CALENDAR_END_HOUR; hour >= CALENDAR_START_HOUR; hour -= 1) {
@@ -425,28 +429,40 @@ function buildCalendarSvg(rows) {
     `);
   }
 
-  const dayColumns = rows.map((row, index) => {
-    const x = CALENDAR_LEFT_PAD + index * CALENDAR_PITCH;
-    const isWeekend = WEEKEND_DAYS.has(row.day);
+  const dayColumns = dayLayouts.map((layout, index) => {
+    const { row, x, width, isWeekend, isMonthStart, sunsetHour } = layout;
     const showLabel = labelIndices.has(index);
+    const markerColor = isMonthStart ? CALENDAR_COLORS.monthStart : CALENDAR_COLORS.weekend;
     const label = showLabel
       ? `
         <text
-          x="${x + CALENDAR_COLUMN_WIDTH - 1}"
+          x="${x + width - 1}"
           y="${labelTop - 26}"
-          transform="rotate(-90 ${x + CALENDAR_COLUMN_WIDTH - 1} ${labelTop - 26})"
-          fill="${isWeekend ? CALENDAR_COLORS.weekend : "rgba(24, 33, 42, 0.74)"}"
+          transform="rotate(-90 ${x + width - 1} ${labelTop - 26})"
+          fill="${isMonthStart ? CALENDAR_COLORS.monthStart : isWeekend ? CALENDAR_COLORS.weekend : "rgba(24, 33, 42, 0.74)"}"
           font-size="14"
-          font-weight="${isWeekend ? 800 : 700}"
+          font-weight="${isMonthStart || isWeekend ? 800 : 700}"
           font-family="Manrope, system-ui, sans-serif"
         >${escapeHtml(formatCalendarLabel(row))}</text>
       `
       : "";
 
-    const weekendCaps = isWeekend
+    const weekendCaps = (isWeekend || isMonthStart)
       ? `
-        <rect x="${x + 1}" y="${labelTop - 16}" width="${CALENDAR_COLUMN_WIDTH - 1}" height="9" fill="${CALENDAR_COLORS.weekend}" />
-        <rect x="${x + 1}" y="${chartBottom + 12}" width="${CALENDAR_COLUMN_WIDTH - 1}" height="9" fill="${CALENDAR_COLORS.weekend}" />
+        <rect x="${x + 0.5}" y="${labelTop - 16}" width="${Math.max(2, width - 0.5)}" height="9" fill="${markerColor}" />
+        <rect x="${x + 0.5}" y="${chartBottom + 12}" width="${Math.max(2, width - 0.5)}" height="9" fill="${markerColor}" />
+      `
+      : "";
+
+    const sundownShade = sunsetHour < CALENDAR_END_HOUR
+      ? `
+        <rect
+          x="${x}"
+          y="${labelTop}"
+          width="${width}"
+          height="${timeToY(sunsetHour, chartHeight)}"
+          fill="${CALENDAR_COLORS.sundown}"
+        />
       `
       : "";
 
@@ -465,9 +481,9 @@ function buildCalendarSvg(rows) {
 
         return `
           <rect
-            x="${x + 1}"
+            x="${x + Math.max(0.6, width * 0.2)}"
             y="${y + 1}"
-            width="${CALENDAR_COLUMN_WIDTH - 2}"
+            width="${Math.max(1.2, width * 0.6)}"
             height="${Math.max(0, height - 2)}"
             fill="${CALENDAR_COLORS.high}"
             opacity="0.92"
@@ -480,11 +496,17 @@ function buildCalendarSvg(rows) {
       <g>
         ${label}
         ${weekendCaps}
-        <rect x="${x}" y="${labelTop}" width="${CALENDAR_COLUMN_WIDTH}" height="${middayY - labelTop}" fill="${CALENDAR_COLORS.afternoon}" />
-        <rect x="${x}" y="${labelTop}" width="${CALENDAR_COLUMN_WIDTH}" height="${eveningY - labelTop}" fill="${CALENDAR_COLORS.evening}" opacity="0.72" />
-        <rect x="${x}" y="${middayY}" width="${CALENDAR_COLUMN_WIDTH}" height="${chartBottom - middayY}" fill="${CALENDAR_COLORS.morning}" />
+        <rect x="${x}" y="${labelTop}" width="${width}" height="${middayY - labelTop}" fill="${CALENDAR_COLORS.afternoon}" />
+        <rect x="${x}" y="${middayY}" width="${width}" height="${chartBottom - middayY}" fill="${CALENDAR_COLORS.morning}" />
+        ${sundownShade}
         ${highlights}
-        <rect x="${x + 3}" y="${labelTop}" width="1.4" height="${chartHeight}" fill="${isWeekend ? "rgba(217, 111, 29, 0.56)" : "rgba(90, 100, 108, 0.16)"}" />
+        <rect
+          x="${x + width / 2 - (isWeekend ? 0.7 : 0.35)}"
+          y="${labelTop}"
+          width="${isWeekend ? 1.4 : 0.7}"
+          height="${chartHeight}"
+          fill="${isMonthStart ? CALENDAR_COLORS.monthStart : isWeekend ? "rgba(217, 111, 29, 0.56)" : "rgba(90, 100, 108, 0.16)"}"
+        />
       </g>
     `;
   });
@@ -506,6 +528,19 @@ function buildCalendarSvg(rows) {
       ${dayColumns.join("")}
     </svg>
   `;
+}
+
+function buildCalendarDayLayouts(rows, timeOptions) {
+  let x = CALENDAR_LEFT_PAD;
+  return rows.map((row) => {
+    const isWeekend = WEEKEND_DAYS.has(row.day);
+    const isMonthStart = row.date.slice(8, 10) === "01";
+    const width = isWeekend ? CALENDAR_WEEKEND_WIDTH : CALENDAR_WEEKDAY_WIDTH;
+    const sunsetHour = getSunsetHourForDate(row.date, timeOptions);
+    const layout = { row, x, width, isWeekend, isMonthStart, sunsetHour };
+    x += width + CALENDAR_COLUMN_GAP;
+    return layout;
+  });
 }
 
 function buildCalendarAxisMarkup(side) {
@@ -536,8 +571,12 @@ function maybeScrollCalendarToToday(rows) {
   state.calendarScrollKey = scrollKey;
 
   requestAnimationFrame(() => {
+    const dayLayouts = buildCalendarDayLayouts(rows, {
+      timezoneMode: state.timezoneMode,
+      timeZone: ENGINE_CONFIG.timezone,
+    });
     const targetIndex = todayIndex >= 0 ? todayIndex : 0;
-    const targetLeft = Math.max(0, targetIndex * CALENDAR_PITCH - 8);
+    const targetLeft = Math.max(0, (dayLayouts[targetIndex]?.x || CALENDAR_LEFT_PAD) - CALENDAR_LEFT_PAD - 8);
     elements.calendarWrap.scrollLeft = targetLeft;
     syncCalendarScrollUi();
   });
@@ -572,19 +611,34 @@ function syncCalendarScrollUi() {
 function pickCalendarLabelIndices(rows) {
   const picked = new Set();
   let lastPicked = -99;
-  const minimumGap = 4;
+  const minimumGap = 3;
+  let skipSaturdayUntil = -1;
 
   rows.forEach((row, index) => {
     const isEdge = index === 0 || index === rows.length - 1;
     const isMonthStart = row.date.slice(8, 10) === "01";
     const isSaturday = row.day === "Sat";
-    if (!isEdge && !isMonthStart && !isSaturday) {
+    if (isMonthStart) {
+      picked.add(index);
+      lastPicked = index;
+      skipSaturdayUntil = index + 7;
       return;
     }
 
-    if (isEdge || index - lastPicked >= minimumGap) {
+    if (isEdge) {
       picked.add(index);
       lastPicked = index;
+      return;
+    }
+
+    if (isSaturday) {
+      if (index <= skipSaturdayUntil) {
+        return;
+      }
+      if (index - lastPicked >= minimumGap) {
+        picked.add(index);
+        lastPicked = index;
+      }
     }
   });
 
@@ -833,6 +887,41 @@ function getTodayDateKey(options) {
   return getDateKeyFromDate(new Date(), options);
 }
 
+function getSunsetHourForDate(dateKey, options) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
+  const dayOfYear = getDayOfYearUtc(date);
+  const lngHour = STATION_COORDS.lon / 15;
+  const t = dayOfYear + ((18 - lngHour) / 24);
+  const m = (0.9856 * t) - 3.289;
+  const l = normalizeDegrees(
+    m
+      + (1.916 * Math.sin(toRadians(m)))
+      + (0.020 * Math.sin(toRadians(2 * m)))
+      + 282.634
+  );
+  let ra = normalizeDegrees(toDegrees(Math.atan(0.91764 * Math.tan(toRadians(l)))));
+  const lQuadrant = Math.floor(l / 90) * 90;
+  const raQuadrant = Math.floor(ra / 90) * 90;
+  ra = (ra + (lQuadrant - raQuadrant)) / 15;
+
+  const sinDec = 0.39782 * Math.sin(toRadians(l));
+  const cosDec = Math.cos(Math.asin(sinDec));
+  const cosH =
+    (Math.cos(toRadians(90.833)) - (sinDec * Math.sin(toRadians(STATION_COORDS.lat)))) /
+    (cosDec * Math.cos(toRadians(STATION_COORDS.lat)));
+
+  if (cosH >= 1 || cosH <= -1) {
+    return CALENDAR_END_HOUR;
+  }
+
+  const h = toDegrees(Math.acos(cosH)) / 15;
+  const localMeanTime = h + ra - (0.06571 * t) - 6.622;
+  const utcHours = normalizeHours(localMeanTime - lngHour);
+  const utcDate = new Date(Date.UTC(year, month - 1, day, 0, 0, 0) + utcHours * 3600000);
+  return getHourValueFromDate(utcDate, options);
+}
+
 function getDateKeyFromDate(date, options) {
   if (options.timezoneMode === "utc") {
     return date.toISOString().slice(0, 10);
@@ -847,6 +936,44 @@ function getDateKeyFromDate(date, options) {
 
   const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
   return `${values.year}-${values.month}-${values.day}`;
+}
+
+function getHourValueFromDate(date, options) {
+  if (options.timezoneMode === "utc") {
+    return date.getUTCHours() + date.getUTCMinutes() / 60;
+  }
+
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: options.timeZone,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return Number(values.hour) + Number(values.minute) / 60;
+}
+
+function getDayOfYearUtc(date) {
+  const start = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const current = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  return Math.round((current - start) / 86400000);
+}
+
+function toRadians(value) {
+  return (value * Math.PI) / 180;
+}
+
+function toDegrees(value) {
+  return (value * 180) / Math.PI;
+}
+
+function normalizeDegrees(value) {
+  return ((value % 360) + 360) % 360;
+}
+
+function normalizeHours(value) {
+  return ((value % 24) + 24) % 24;
 }
 
 function labelForTideFilter(value) {

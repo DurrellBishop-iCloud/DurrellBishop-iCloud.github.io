@@ -433,6 +433,16 @@ button:disabled {
   background: rgba(24, 33, 42, 0.34);
 }
 
+@media (hover: none) and (pointer: coarse) {
+  .calendar-wrap {
+    cursor: auto;
+  }
+
+  .calendar-scroller {
+    display: none;
+  }
+}
+
 .table-wrap {
   overflow: auto;
   max-height: 72vh;
