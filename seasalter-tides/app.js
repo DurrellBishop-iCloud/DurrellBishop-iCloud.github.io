@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.9";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.9";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.10";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.10";
 
 const MONTHS = [
   "January",
@@ -22,7 +22,7 @@ const WEEKEND_DAYS = new Set(["Sat", "Sun"]);
 const STATION_COORDS = { lat: 51.349, lon: 1.0049 };
 const CALENDAR_LEFT_PAD = 18;
 const CALENDAR_WEEKEND_WIDTH = 7;
-const CALENDAR_WEEKDAY_WIDTH = 3.5;
+const CALENDAR_WEEKDAY_WIDTH = 2.4;
 const CALENDAR_COLUMN_GAP = 5;
 const CALENDAR_CHART_HEIGHT = 540;
 const CALENDAR_LABEL_TOP = 146;
@@ -498,11 +498,14 @@ function buildCalendarSvg(rows) {
         const y = labelTop + timeToY(endHour, chartHeight);
         const height = timeToY(startHour, chartHeight) - timeToY(endHour, chartHeight);
 
+        const inset = isWeekend ? Math.max(0.6, width * 0.2) : 0.2;
+        const highlightWidth = isWeekend ? Math.max(1.2, width * 0.6) : Math.max(1.8, width - 0.4);
+
         return `
           <rect
-            x="${x + Math.max(0.6, width * 0.2)}"
+            x="${x + inset}"
             y="${y + 1}"
-            width="${Math.max(1.2, width * 0.6)}"
+            width="${highlightWidth}"
             height="${Math.max(0, height - 2)}"
             fill="${CALENDAR_COLORS.high}"
             opacity="0.92"
