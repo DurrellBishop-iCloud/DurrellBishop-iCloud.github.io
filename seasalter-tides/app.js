@@ -1,5 +1,5 @@
-import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.20";
-import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.20";
+import { createTidePredictor } from "./neaps-tide-predictor.js?v=0.8.21";
+import { ENGINE_CONFIG, CONSTITUENTS } from "./tide-engine-data.js?v=0.8.21";
 
 const MONTHS = [
   "January",
@@ -30,7 +30,8 @@ const CALENDAR_BOTTOM_PAD = 46;
 const CALENDAR_COLORS = {
   weekend: "#d96f1d",
   monthStart: "rgba(95, 104, 114, 0.72)",
-  high: "#6abfe9",
+  highLow: "#9cd1f2",
+  highHigh: "#9073d9",
   morning: "rgba(191, 226, 233, 0.72)",
   afternoon: "rgba(246, 241, 223, 0.84)",
   sundown: "rgba(95, 104, 114, 0.18)",
@@ -45,7 +46,7 @@ const state = {
   timezoneMode: "local",
   timeFormat: "24",
   tideFilter: "both",
-  highlightWindowHours: 2,
+  highlightWindowHours: 1,
   search: "",
   month: "all",
   startDate: "",
@@ -106,6 +107,7 @@ function init() {
   const defaultYear = now.getFullYear();
   elements.yearInput.value = String(defaultYear);
   elements.versionPill.textContent = ENGINE_CONFIG.appVersion;
+  elements.highlightWindow.value = "1";
 
   populateMonthFilter();
   syncDateInputsForYear(defaultYear);
@@ -153,7 +155,7 @@ function attachEvents() {
   });
 
   elements.highlightWindow.addEventListener("change", () => {
-    state.highlightWindowHours = Number(elements.highlightWindow.value) || 2;
+    state.highlightWindowHours = Number(elements.highlightWindow.value) || 1;
     renderCalendar();
   });
 
@@ -200,7 +202,7 @@ function generateTable({ forceRefresh }) {
   state.timezoneMode = elements.timezoneMode.value;
   state.timeFormat = elements.timeFormat.value;
   state.tideFilter = elements.tideFilter.value;
-  state.highlightWindowHours = Number(elements.highlightWindow.value) || 2;
+  state.highlightWindowHours = Number(elements.highlightWindow.value) || 1;
   state.month = elements.monthFilter.value;
   state.startDate = elements.startDate.value;
   state.endDate = elements.endDate.value;
@@ -438,6 +440,7 @@ function buildCalendarSvg(rows) {
   const chartBottom = labelTop + chartHeight;
   const windowHours = state.highlightWindowHours;
   const labelIndices = pickCalendarLabelIndices(rows);
+  const highTideHeightScale = getHighTideHeightScale(rows);
 
   const hourlyGuides = [];
   for (let hour = CALENDAR_END_HOUR; hour >= CALENDAR_START_HOUR; hour -= 1) {
@@ -498,6 +501,7 @@ function buildCalendarSvg(rows) {
 
         const y = labelTop + timeToY(endHour, chartHeight);
         const height = timeToY(startHour, chartHeight) - timeToY(endHour, chartHeight);
+        const highlightColor = getHighTideColor(event.rawHeight, highTideHeightScale);
 
         const inset = isWeekend ? Math.max(0.6, width * 0.2) : 0.2;
         const highlightWidth = isWeekend ? Math.max(1.2, width * 0.6) : Math.max(1.8, width - 0.4);
@@ -508,7 +512,7 @@ function buildCalendarSvg(rows) {
             y="${y + 1}"
             width="${highlightWidth}"
             height="${Math.max(0, height - 2)}"
-            fill="${CALENDAR_COLORS.high}"
+            fill="${highlightColor}"
             opacity="0.92"
           />
         `;
@@ -571,6 +575,29 @@ function buildCalendarDayLayouts(rows, timeOptions) {
     x += width + CALENDAR_COLUMN_GAP;
     return layout;
   });
+}
+
+function getHighTideHeightScale(rows) {
+  const heights = rows.flatMap((row) => row.highs.map((event) => event.rawHeight)).filter(Number.isFinite);
+
+  if (heights.length === 0) {
+    return { min: 0, max: 1 };
+  }
+
+  return {
+    min: Math.min(...heights),
+    max: Math.max(...heights),
+  };
+}
+
+function getHighTideColor(height, scale) {
+  if (!Number.isFinite(height)) {
+    return CALENDAR_COLORS.highLow;
+  }
+
+  const range = scale.max - scale.min;
+  const ratio = range <= 0 ? 0.5 : clamp((height - scale.min) / range, 0, 1);
+  return mixHexColors(CALENDAR_COLORS.highLow, CALENDAR_COLORS.highHigh, ratio);
 }
 
 function buildCalendarAxisMarkup(side) {
@@ -1110,6 +1137,29 @@ function getDayOfYearUtc(date) {
   const start = Date.UTC(date.getUTCFullYear(), 0, 0);
   const current = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
   return Math.round((current - start) / 86400000);
+}
+
+function mixHexColors(startHex, endHex, ratio) {
+  const start = parseHexColor(startHex);
+  const end = parseHexColor(endHex);
+  return `rgb(${mixChannel(start.r, end.r, ratio)}, ${mixChannel(start.g, end.g, ratio)}, ${mixChannel(start.b, end.b, ratio)})`;
+}
+
+function parseHexColor(hex) {
+  const value = hex.replace("#", "");
+  return {
+    r: Number.parseInt(value.slice(0, 2), 16),
+    g: Number.parseInt(value.slice(2, 4), 16),
+    b: Number.parseInt(value.slice(4, 6), 16),
+  };
+}
+
+function mixChannel(start, end, ratio) {
+  return Math.round(start + ((end - start) * ratio));
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function toRadians(value) {
