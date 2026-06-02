@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Linear Space-Time Scale</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app">
+      <section class="toolbar" aria-label="Scale controls">
+        <div class="title">
+          <h1>Space-Time Scale</h1>
+          <p>Linear remake of the photographed logarithmic diagram</p>
+        </div>
+
+        <div class="control-group" role="group" aria-label="View mode">
+          <button class="mode-button active" data-mode="linear" type="button">Linear</button>
+          <button class="mode-button" data-mode="log" type="button">Log reference</button>
+        </div>
+
+        <div class="control-group" role="group" aria-label="Navigation presets">
+          <button data-preset="all" type="button">All</button>
+          <button data-preset="human" type="button">Human</button>
+          <button data-preset="room" type="button">Room</button>
+          <button data-preset="planet" type="button">Planet</button>
+          <button data-preset="cosmos" type="button">Cosmos</button>
+        </div>
+
+        <div class="control-group" role="group" aria-label="Zoom controls">
+          <button data-zoom="out" type="button">-</button>
+          <button data-zoom="in" type="button">+</button>
+          <button data-reset type="button">Reset</button>
+        </div>
+      </section>
+
+      <section class="stage" aria-label="Interactive chart">
+        <canvas id="chart"></canvas>
+        <aside class="readout" aria-live="polite">
+          <div>
+            <span>Mode</span>
+            <strong id="modeReadout">Linear</strong>
+          </div>
+          <div>
+            <span>Pointer space</span>
+            <strong id="xReadout">-</strong>
+          </div>
+          <div>
+            <span>Pointer time</span>
+            <strong id="yReadout">-</strong>
+          </div>
+          <div>
+            <span>Visible width</span>
+            <strong id="widthReadout">-</strong>
+          </div>
+          <div>
+            <span>Visible height</span>
+            <strong id="heightReadout">-</strong>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
