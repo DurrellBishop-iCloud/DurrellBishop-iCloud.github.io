@@ -23,6 +23,20 @@ const human = {
   maxY: 1e9
 };
 
+const concepts = [
+  { label: "Particle event", x: 1e-15, y: 1e-23, dx: 12, dy: -14 },
+  { label: "Atom", x: 1e-10, y: 1e-15, align: "right" },
+  { label: "Cell moment", x: 1e-5, y: 1e-3, align: "right" },
+  { label: "Earth day", x: 1.27e7, y: 8.64e4 },
+  { label: "Moon orbit", x: 3.84e8, y: 2.36e6 },
+  { label: "Earth year", x: 1.5e11, y: 3.16e7 },
+  { label: "Recorded history", x: 1e7, y: 1.6e11 },
+  { label: "Geological era", x: 1.3e7, y: 1e15, dy: 20 },
+  { label: "Star life", x: 1e18, y: 1e17, align: "right", dx: -54, dy: 28 },
+  { label: "Galaxy", x: 1e21, y: 1e16, dx: 10, dy: 44 },
+  { label: "Observable universe", x: 8.8e26, y: 4.35e17, clamp: true, align: "right", dy: -4 }
+];
+
 const presets = {
   all: { minX: world.minX, maxX: world.maxX, minY: world.minY, maxY: world.maxY },
   human: { minX: 1e-3, maxX: 1e7, minY: 1e-1, maxY: 1e9 },
@@ -126,6 +140,7 @@ function drawLinear() {
   const yStep = niceStep((viewMax.y - viewMin.y) / 6);
 
   drawGrid(viewMin, viewMax, xStep, yStep, left, right, top, bottom);
+  drawLinearConcepts(left, right, top, bottom);
   drawWorldBounds();
   drawHumanBox();
   drawLinearLabels(viewMin, viewMax, xStep, yStep, left, right, top, bottom);
@@ -217,6 +232,68 @@ function drawWorldBounds() {
   ctx.restore();
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function inHumanExperience(concept) {
+  return concept.x >= human.minX && concept.x <= human.maxX && concept.y >= human.minY && concept.y <= human.maxY;
+}
+
+function drawConceptMarker(x, y, label, options = {}) {
+  const radius = options.radius || 4.5;
+  const dx = options.dx || 0;
+  const dy = options.dy || 0;
+  const labelX = (options.align === "right" ? x - 8 : x + 8) + dx;
+  const labelY = y - 8 + dy;
+  const maxLabelX = canvas.clientWidth - 150;
+
+  ctx.save();
+  ctx.fillStyle = "#d64d2f";
+  ctx.strokeStyle = "#9b2f1d";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#9b2f1d";
+  ctx.font = "700 12px system-ui, sans-serif";
+  ctx.textAlign = options.align === "right" ? "right" : "left";
+  ctx.fillText(label, clamp(labelX, 10, maxLabelX), clamp(labelY, 16, canvas.clientHeight - 16));
+  ctx.restore();
+}
+
+function drawDottedLeader(x, y, left, bottom) {
+  ctx.save();
+  ctx.strokeStyle = "rgba(155, 47, 29, 0.38)";
+  ctx.lineWidth = 1.1;
+  ctx.setLineDash([2, 5]);
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x, bottom);
+  ctx.moveTo(x, y);
+  ctx.lineTo(left, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawLinearConcepts(left, right, top, bottom) {
+  ctx.save();
+  concepts.forEach(concept => {
+    if (inHumanExperience(concept)) return;
+    const point = worldToScreen(concept.x, concept.y);
+    const x = concept.clamp ? clamp(point.x, left, right) : point.x;
+    const y = concept.clamp ? clamp(point.y, top, bottom) : point.y;
+    const isVisible = x >= left && x <= right && y >= top && y <= bottom;
+    if (!isVisible) return;
+
+    drawDottedLeader(x, y, left, bottom);
+    drawConceptMarker(x, y, concept.label, concept);
+  });
+  ctx.restore();
+}
+
 function drawHumanBox() {
   const a = worldToScreen(human.minX, human.minY);
   const b = worldToScreen(human.maxX, human.maxY);
@@ -275,8 +352,31 @@ function drawLogReference() {
   ctx.fillText("Human", h1.x + 14, h2.y + 42);
   ctx.fillText("experience", h1.x + 14, h2.y + 66);
 
+  drawLogConcepts(left, right, top, bottom);
   drawLogAxis(left, right, top, bottom);
   ctx.restore();
+}
+
+function drawLogConcepts(left, right, top, bottom) {
+  concepts.forEach(concept => {
+    if (inHumanExperience(concept)) return;
+    const xExp = Math.log10(concept.x);
+    const yExp = Math.log10(concept.y);
+    const point = logToScreen(
+      clamp(xExp, state.logView.minExpX, state.logView.maxExpX),
+      clamp(yExp, state.logView.minExpY, state.logView.maxExpY)
+    );
+    const x = clamp(point.x, left, right);
+    const y = clamp(point.y, top, bottom);
+
+    drawDottedLeader(x, y, left, bottom);
+    drawConceptMarker(x, y, concept.label, {
+      align: concept.align,
+      dx: concept.dx,
+      dy: concept.dy,
+      radius: concept.clamp ? 5.5 : 4.5
+    });
+  });
 }
 
 function hatch(x, y, w, h) {
