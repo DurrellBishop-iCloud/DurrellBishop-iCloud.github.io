@@ -32,6 +32,7 @@ The app is static. Publish the folder with GitHub Pages from the repository root
 - Nearby separated parts attract gently before becoming 3D.
 - Overlapping/touching white parts become visible merged silhouettes.
 - Colored robot palette inspired by the reference robots.
-- Dynamic Three.js volume preview with tapered, curved, or sharp profiled sides.
+- Shape grammar that mixes straight extrusions, flat blades, one-sided tapers, curved ribbons, spheroids, and tube-like rings.
+- Mostly sharp-edged robot parts, with rounded volumes only when the silhouette suggests a curved object.
 
 For desktop testing without a camera, open `http://localhost:4173/?test`.
