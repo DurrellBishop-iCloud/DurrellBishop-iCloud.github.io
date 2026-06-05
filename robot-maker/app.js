@@ -7,18 +7,64 @@ const ROBOT_COLORS = {
   red: "#c71924",
   yellow: "#f0bf1f",
   navy: "#10284c",
-  grey: "#d8d6cd"
+  grey: "#d8d6cd",
+  coral: "#e95542",
+  mint: "#53a889",
+  pink: "#e784a7",
+  cobalt: "#324f9f",
+  lilac: "#9c8fd1",
+  ochre: "#c78f21"
 };
 
-const ROBOT_PALETTE = [
-  ROBOT_COLORS.white,
-  ROBOT_COLORS.black,
-  ROBOT_COLORS.red,
-  ROBOT_COLORS.yellow,
-  ROBOT_COLORS.navy,
-  ROBOT_COLORS.grey
+const COLOR_PALETTES = [
+  {
+    name: "Robot classic",
+    paper: ROBOT_COLORS.white,
+    ink: ROBOT_COLORS.black,
+    colors: [
+      ROBOT_COLORS.white,
+      ROBOT_COLORS.black,
+      ROBOT_COLORS.red,
+      ROBOT_COLORS.yellow,
+      ROBOT_COLORS.navy,
+      ROBOT_COLORS.grey
+    ]
+  },
+  {
+    name: "Milan blocks",
+    paper: "#f8efd9",
+    ink: "#171415",
+    colors: ["#f8efd9", "#171415", "#e14f37", "#f2c542", "#2d766b", "#e787a8", "#4257a6", "#8fb35f"]
+  },
+  {
+    name: "Cut paper acid",
+    paper: "#fff7e7",
+    ink: "#111318",
+    colors: ["#fff7e7", "#111318", "#ff5d53", "#ffd642", "#27a7a0", "#ff8ab3", "#5b64bf", "#f07b2f"]
+  },
+  {
+    name: "Painted wood",
+    paper: "#efe6d1",
+    ink: "#1e1b19",
+    colors: ["#efe6d1", "#1e1b19", "#be342c", "#d9a62f", "#416c4f", "#d9866f", "#2e5c94", "#c8c5b4"]
+  },
+  {
+    name: "Studio night",
+    paper: "#f4ead5",
+    ink: "#0f1525",
+    colors: ["#f4ead5", "#0f1525", "#e63f5a", "#f0c51f", "#168b89", "#8f78c8", "#f18a3b", "#b9d77a"]
+  },
+  {
+    name: "Soft construction",
+    paper: "#f7f0e8",
+    ink: "#232426",
+    colors: ["#f7f0e8", "#232426", "#d84a40", "#e6b949", "#7896b8", "#e3a0bc", "#637d4f", "#c96f4d"]
+  }
 ];
 
+const DEFAULT_PALETTE = COLOR_PALETTES[0];
+const HOLD_START_DELAY_MS = 220;
+const LIVE_VERSION_INTERVAL_MS = 1000;
 const textureCache = new Map();
 
 const els = {
@@ -34,7 +80,15 @@ const state = {
   stream: null,
   starting: false,
   processing: false,
-  lastSilhouettes: []
+  lastSilhouettes: [],
+  buildSerial: 0,
+  lastBuildOptions: null,
+  pointerDown: false,
+  holdStartTimer: null,
+  liveTimer: null,
+  liveActive: false,
+  ignoreNextClick: false,
+  ignoreClickTimer: null
 };
 
 let renderer;
@@ -55,27 +109,144 @@ if (params.has("testImage")) {
   window.setTimeout(runTestCapture, 500);
 }
 
+if (params.has("autohold")) {
+  window.setTimeout(runAutoHoldTest, 900);
+}
+
 animate();
 
 function bindEvents() {
-  els.shutter.addEventListener("click", async () => {
-    if (state.processing || state.starting) return;
-
-    if (!state.stream) {
-      await startCamera();
+  els.shutter.addEventListener("pointerdown", onShutterPointerDown);
+  els.shutter.addEventListener("pointerup", onShutterPointerUp);
+  els.shutter.addEventListener("pointercancel", stopLiveGeneration);
+  els.shutter.addEventListener("lostpointercapture", stopLiveGeneration);
+  els.shutter.addEventListener("contextmenu", (event) => event.preventDefault());
+  els.shutter.addEventListener("click", (event) => {
+    if (state.ignoreNextClick) {
+      state.ignoreNextClick = false;
+      if (state.ignoreClickTimer) {
+        window.clearTimeout(state.ignoreClickTimer);
+        state.ignoreClickTimer = null;
+      }
+      event.preventDefault();
       return;
     }
-
-    if (state.mode === "result") {
-      showCamera();
-      return;
-    }
-
-    captureAndBuild();
+    runSingleShutterAction();
   });
 
   window.addEventListener("resize", resizeRenderer);
   window.addEventListener("orientationchange", () => window.setTimeout(resizeRenderer, 250));
+}
+
+function onShutterPointerDown(event) {
+  if (event.pointerType === "mouse" && event.button !== 0) return;
+
+  event.preventDefault();
+  state.pointerDown = true;
+  ignoreUpcomingClick();
+  els.shutter.setPointerCapture?.(event.pointerId);
+  clearHoldStartTimer();
+  state.holdStartTimer = window.setTimeout(beginLiveGeneration, HOLD_START_DELAY_MS);
+}
+
+function onShutterPointerUp(event) {
+  if (!state.pointerDown) return;
+
+  event.preventDefault();
+  state.pointerDown = false;
+  clearHoldStartTimer();
+
+  if (state.liveActive) {
+    stopLiveGeneration();
+    return;
+  }
+
+  runSingleShutterAction();
+}
+
+async function runSingleShutterAction() {
+  if (state.processing || state.starting) return;
+
+  if (!state.stream) {
+    if (params.has("test")) {
+      runTestCapture();
+      return;
+    }
+    await startCamera();
+    return;
+  }
+
+  if (state.mode === "result") {
+    showCamera();
+    return;
+  }
+
+  captureAndBuild();
+}
+
+async function beginLiveGeneration() {
+  if (!state.pointerDown || state.liveActive) return;
+
+  state.liveActive = true;
+  setStateClass("is-live-cycling", true);
+  els.shutter.setAttribute("aria-label", "Generating robot versions");
+
+  if (!state.stream && !params.has("test")) {
+    await startCamera();
+  }
+
+  if (!state.pointerDown || (!state.stream && !params.has("test"))) {
+    stopLiveGeneration();
+    return;
+  }
+
+  captureLiveVersion();
+}
+
+function captureLiveVersion() {
+  if (!state.liveActive) return;
+
+  if (!state.processing) {
+    if (state.stream) {
+      captureAndBuild({ live: true });
+    } else if (params.has("test")) {
+      runTestCapture({ live: true });
+    }
+  }
+
+  state.liveTimer = window.setTimeout(captureLiveVersion, LIVE_VERSION_INTERVAL_MS);
+}
+
+function stopLiveGeneration() {
+  state.pointerDown = false;
+  state.liveActive = false;
+  clearHoldStartTimer();
+  if (state.liveTimer) {
+    window.clearTimeout(state.liveTimer);
+    state.liveTimer = null;
+  }
+  setStateClass("is-live-cycling", false);
+
+  if (state.mode === "result") {
+    els.shutter.setAttribute("aria-label", "Take another photo");
+  } else {
+    els.shutter.setAttribute("aria-label", "Take photo");
+  }
+}
+
+function clearHoldStartTimer() {
+  if (!state.holdStartTimer) return;
+  window.clearTimeout(state.holdStartTimer);
+  state.holdStartTimer = null;
+}
+
+function ignoreUpcomingClick() {
+  state.ignoreNextClick = true;
+  if (state.ignoreClickTimer) window.clearTimeout(state.ignoreClickTimer);
+  state.ignoreClickTimer = window.setTimeout(() => {
+    state.ignoreNextClick = false;
+    state.ignoreClickTimer = null;
+  }, 500);
 }
 
 async function startCamera() {
@@ -120,8 +291,11 @@ function showResult() {
   state.mode = "result";
   document.body.classList.remove("is-error");
   document.body.classList.add("is-result");
-  els.shutter.setAttribute("aria-label", "Take another photo");
-  setStatus(`${state.lastSilhouettes.length} shapes converted`);
+  if (!state.liveActive) {
+    els.shutter.setAttribute("aria-label", "Take another photo");
+  }
+  const paletteName = state.lastBuildOptions?.palette?.name;
+  setStatus(`${state.lastSilhouettes.length} shapes converted${paletteName ? ` in ${paletteName}` : ""}`);
 }
 
 function setStateClass(className, enabled) {
@@ -130,6 +304,27 @@ function setStateClass(className, enabled) {
 
 function setStatus(message) {
   els.status.textContent = message;
+}
+
+function resolveBuildOptions(options = {}) {
+  if (options.palette) return options;
+
+  const variant = Number.isFinite(options.variant) ? options.variant : state.buildSerial++;
+  const paletteIndex = positiveMod(
+    Number.isFinite(options.paletteIndex) ? options.paletteIndex : variant,
+    COLOR_PALETTES.length
+  );
+
+  return {
+    ...options,
+    variant,
+    paletteIndex,
+    palette: COLOR_PALETTES[paletteIndex]
+  };
+}
+
+function positiveMod(value, divisor) {
+  return ((value % divisor) + divisor) % divisor;
 }
 
 function initScene() {
@@ -221,15 +416,18 @@ function animate() {
   renderer.render(scene, camera);
 }
 
-function captureAndBuild() {
+function captureAndBuild(options = {}) {
+  if (state.processing) return false;
+
   if (!els.video.videoWidth || !els.video.videoHeight) {
     setStatus("Camera not ready");
-    return;
+    return false;
   }
 
+  const buildOptions = resolveBuildOptions(options);
   state.processing = true;
   setStateClass("is-processing", true);
-  setStatus("Reading shapes");
+  setStatus(buildOptions.live ? `Reading ${buildOptions.palette.name}` : "Reading shapes");
 
   window.requestAnimationFrame(() => {
     const canvas = els.captureCanvas;
@@ -241,14 +439,19 @@ function captureAndBuild() {
     canvas.height = Math.round(videoHeight * scale);
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(els.video, 0, 0, canvas.width, canvas.height);
-    buildFromCanvas(canvas);
+    buildFromCanvas(canvas, buildOptions);
   });
+
+  return true;
 }
 
-function buildFromCanvas(canvas) {
+function buildFromCanvas(canvas, options = {}) {
+  const buildOptions = resolveBuildOptions(options);
+
   try {
-    const silhouettes = detectWhiteSilhouettes(canvas);
+    const silhouettes = detectWhiteSilhouettes(canvas, buildOptions);
     state.lastSilhouettes = silhouettes;
+    state.lastBuildOptions = buildOptions;
     rebuildScene(silhouettes);
     resetView(silhouettes);
     showResult();
@@ -262,7 +465,7 @@ function buildFromCanvas(canvas) {
   }
 }
 
-function detectWhiteSilhouettes(sourceCanvas) {
+function detectWhiteSilhouettes(sourceCanvas, options = {}) {
   const processCanvas = document.createElement("canvas");
   const maxSide = 420;
   const scale = Math.min(1, maxSide / Math.max(sourceCanvas.width, sourceCanvas.height));
@@ -281,7 +484,7 @@ function detectWhiteSilhouettes(sourceCanvas) {
     .map((component) => componentToSilhouette(component, mask, image.width, image.height))
     .filter(Boolean);
 
-  return normalizeSilhouettes(rawSilhouettes, image.width, image.height);
+  return normalizeSilhouettes(rawSilhouettes, image.width, image.height, options);
 }
 
 function getLuminance(data) {
@@ -790,8 +993,10 @@ function sampleClosedPath(points, maxPoints) {
   return sampled;
 }
 
-function normalizeSilhouettes(silhouettes, width, height) {
+function normalizeSilhouettes(silhouettes, width, height, options = {}) {
   if (silhouettes.length === 0) return [];
+
+  const buildOptions = resolveBuildOptions(options);
 
   let minX = width;
   let minY = height;
@@ -841,11 +1046,20 @@ function normalizeSilhouettes(silhouettes, width, height) {
       fill: silhouette.fill,
       sourceAspect: silhouette.aspect,
       aspect: bounds.width / Math.max(0.001, bounds.height),
-      radialVariance: silhouette.radialVariance
+      radialVariance: silhouette.radialVariance,
+      buildVariant: buildOptions.variant,
+      paletteIndex: buildOptions.paletteIndex,
+      palette: buildOptions.palette
     };
   });
 
-  return assignSurfaceStyles(assignVolumeStyles(colorizeSilhouettes(magnetizeSilhouettes(normalized))));
+  return assignSurfaceStyles(
+    assignVolumeStyles(
+      colorizeSilhouettes(magnetizeSilhouettes(normalized), buildOptions),
+      buildOptions
+    ),
+    buildOptions
+  );
 }
 
 function magnetizeSilhouettes(silhouettes) {
@@ -1163,33 +1377,45 @@ function translateSilhouette(silhouette, dx, dy) {
   });
 }
 
-function colorizeSilhouettes(silhouettes) {
+function colorizeSilhouettes(silhouettes, options = {}) {
+  const palette = options.palette ?? silhouettes[0]?.palette ?? DEFAULT_PALETTE;
+  const colors = palette.colors ?? DEFAULT_PALETTE.colors;
+  const paper = palette.paper ?? colors[0] ?? ROBOT_COLORS.white;
+  const ink = palette.ink ?? colors[1] ?? ROBOT_COLORS.black;
+  const hot = colors[2] ?? ROBOT_COLORS.red;
+  const warm = colors[3] ?? ROBOT_COLORS.yellow;
+  const cool = colors[4] ?? ROBOT_COLORS.navy;
+  const soft = colors[5] ?? ROBOT_COLORS.grey;
   const byHeight = [...silhouettes].sort((a, b) => pathCentroid(b.points).y - pathCentroid(a.points).y);
   const levelColors = [
-    ROBOT_COLORS.white,
-    ROBOT_COLORS.red,
-    ROBOT_COLORS.navy,
-    ROBOT_COLORS.yellow,
-    ROBOT_COLORS.black
+    paper,
+    hot,
+    cool,
+    warm,
+    ink,
+    soft,
+    ...colors.slice(6)
   ];
 
   byHeight.forEach((silhouette, index) => {
     const bounds = pathBounds(silhouette.points);
     const aspect = bounds.width / Math.max(0.001, bounds.height);
     const isBottomPiece = index === byHeight.length - 1 && byHeight.length > 2;
+    const offset = options.paletteIndex ?? silhouette.paletteIndex ?? 0;
+    silhouette.palette = palette;
 
     if (isBottomPiece) {
-      silhouette.color = ROBOT_COLORS.red;
+      silhouette.color = index % 2 === 0 ? hot : ink;
     } else if (silhouette.holes.length > 0) {
-      silhouette.color = ROBOT_COLORS.yellow;
+      silhouette.color = warm;
     } else if (aspect > 2.35) {
-      silhouette.color = index === 0 ? ROBOT_COLORS.black : ROBOT_COLORS.red;
+      silhouette.color = index === 0 ? ink : colors[(offset + 2) % colors.length];
     } else if (aspect < 0.62) {
-      silhouette.color = index % 2 === 0 ? ROBOT_COLORS.navy : ROBOT_COLORS.white;
+      silhouette.color = index % 2 === 0 ? cool : paper;
     } else if (silhouette.edgeMode === "round") {
-      silhouette.color = ROBOT_COLORS.red;
+      silhouette.color = colors[(offset + 5) % colors.length] ?? hot;
     } else {
-      silhouette.color = levelColors[index % levelColors.length];
+      silhouette.color = levelColors[(index + offset) % levelColors.length];
     }
   });
 
@@ -1273,6 +1499,7 @@ function assignVolumeStyles(silhouettes) {
 function assignSurfaceStyles(silhouettes) {
   silhouettes.forEach((silhouette, index) => {
     const seed = shapeSeed(silhouette, index + 53);
+    const palette = silhouette.palette ?? DEFAULT_PALETTE;
     const bounds = pathBounds(silhouette.points);
     const aspect = bounds.width / Math.max(0.001, bounds.height);
     const styleIndex = (index + Math.floor(seed * 10)) % 7;
@@ -1292,13 +1519,15 @@ function assignSurfaceStyles(silhouettes) {
     let finish = finishes[(index + Math.floor(seed * finishes.length)) % finishes.length];
     if (silhouette.volumeStyle?.smooth && seed > 0.28) finish = "glossy";
     if (pattern === "specklePaint") finish = "textured";
-    const accents = pickAccentColors(silhouette.color, seed, 4);
+    const accents = pickAccentColors(silhouette.color, seed, 4, palette);
 
     silhouette.surfaceStyle = {
       finish,
       pattern,
       baseColor: silhouette.color ?? ROBOT_COLORS.white,
       accentColors: accents,
+      paperColor: palette.paper ?? ROBOT_COLORS.white,
+      inkColor: palette.ink ?? ROBOT_COLORS.black,
       splitAngle: seed * Math.PI * 2,
       splitOffset: (seed - 0.5) * 0.55,
       stripeAxis: aspect > 1.6 ? "x" : "y",
@@ -1312,8 +1541,9 @@ function assignSurfaceStyles(silhouettes) {
   return silhouettes;
 }
 
-function pickAccentColors(baseColor, seed, count) {
-  const available = ROBOT_PALETTE.filter((color) => color !== baseColor);
+function pickAccentColors(baseColor, seed, count, palette = DEFAULT_PALETTE) {
+  const available = (palette.colors ?? DEFAULT_PALETTE.colors).filter((color) => color !== baseColor);
+  if (available.length === 0) return [ROBOT_COLORS.black, ROBOT_COLORS.red, ROBOT_COLORS.yellow, ROBOT_COLORS.navy].slice(0, count);
   const colors = [];
   let offset = Math.floor(seed * available.length);
 
@@ -1478,7 +1708,16 @@ function volumeStyleForKind(kind, silhouette, metrics) {
 
 function shapeSeed(silhouette, index) {
   const center = pathCentroid(silhouette.points);
-  const raw = Math.sin(center.x * 12.9898 + center.y * 78.233 + silhouette.area * 0.0017 + index * 37.719) * 43758.5453;
+  const variant = silhouette.buildVariant ?? 0;
+  const paletteIndex = silhouette.paletteIndex ?? 0;
+  const raw = Math.sin(
+    center.x * 12.9898 +
+    center.y * 78.233 +
+    silhouette.area * 0.0017 +
+    index * 37.719 +
+    variant * 91.113 +
+    paletteIndex * 17.671
+  ) * 43758.5453;
   return raw - Math.floor(raw);
 }
 
@@ -1680,7 +1919,7 @@ function paintGeometrySurfaces(indexedGeometry, silhouette) {
   const style = silhouette.surfaceStyle ?? {
     pattern: "solid",
     baseColor: silhouette.color ?? ROBOT_COLORS.white,
-    accentColors: pickAccentColors(silhouette.color ?? ROBOT_COLORS.white, 0.5, 4)
+    accentColors: pickAccentColors(silhouette.color ?? ROBOT_COLORS.white, 0.5, 4, silhouette.palette)
   };
 
   const count = index ? index.count : position.count;
@@ -1759,7 +1998,7 @@ function colorForSurfaceTriangle(style, centroid, normal, faceIndex) {
   } else if (style.pattern === "specklePaint") {
     const noise = surfaceNoise(centroid.x, centroid.y, centroid.z, style.textureSeed);
     color = noise > 0.68 ? mixColor(base, accents[0], 0.48) : base;
-    if (noise < 0.16) color = mixColor(color, colorObject(ROBOT_COLORS.white), 0.28);
+    if (noise < 0.16) color = mixColor(color, colorObject(style.paperColor ?? ROBOT_COLORS.white), 0.28);
   } else if (style.pattern === "sideBand") {
     const side = Math.abs(normal.z) < 0.42;
     const stripe = Math.floor((centroid.y + style.stripeOffset) * style.stripeScale);
@@ -1767,7 +2006,7 @@ function colorForSurfaceTriangle(style, centroid, normal, faceIndex) {
   }
 
   if (Math.abs(normal.z) < 0.18) {
-    color = mixColor(color, colorObject(ROBOT_COLORS.black), 0.08);
+    color = mixColor(color, colorObject(style.inkColor ?? ROBOT_COLORS.black), 0.08);
   }
 
   return color;
@@ -2081,7 +2320,8 @@ function resetView() {
   controls.update();
 }
 
-function runTestCapture() {
+function runTestCapture(options = {}) {
+  const buildOptions = resolveBuildOptions(options);
   const canvas = els.captureCanvas;
   canvas.width = 1000;
   canvas.height = 1300;
@@ -2089,10 +2329,11 @@ function runTestCapture() {
   ctx.fillStyle = "#07080a";
   ctx.fillRect(0, 0, canvas.width, canvas.height);
   ctx.fillStyle = "#ffffff";
+  const drift = ((buildOptions.variant % 5) - 2) * 7;
 
   ctx.save();
-  ctx.translate(500, 330);
-  ctx.rotate(-0.08);
+  ctx.translate(500 + drift, 330);
+  ctx.rotate(-0.08 + drift * 0.0015);
   ctx.beginPath();
   ctx.moveTo(-155, 170);
   ctx.lineTo(155, 170);
@@ -2103,8 +2344,8 @@ function runTestCapture() {
   ctx.restore();
 
   ctx.save();
-  ctx.translate(500, 605);
-  ctx.rotate(0.03);
+  ctx.translate(500 - drift * 0.6, 605);
+  ctx.rotate(0.03 - drift * 0.001);
   ctx.beginPath();
   ctx.moveTo(-270, 170);
   ctx.lineTo(270, 170);
@@ -2123,11 +2364,12 @@ function runTestCapture() {
   ctx.arc(715, 1040, 46, 0, Math.PI * 2);
   ctx.fill();
 
-  buildFromCanvas(canvas);
+  buildFromCanvas(canvas, buildOptions);
 }
 
-function runImageTest(src) {
+function runImageTest(src, options = {}) {
   if (!src) return;
+  const buildOptions = resolveBuildOptions(options);
   const image = new Image();
   image.onload = () => {
     const canvas = els.captureCanvas;
@@ -2137,10 +2379,17 @@ function runImageTest(src) {
     canvas.height = Math.round(image.naturalHeight * scale);
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-    buildFromCanvas(canvas);
+    buildFromCanvas(canvas, buildOptions);
   };
   image.onerror = () => setStatus("Test image unavailable");
   image.src = src;
+}
+
+function runAutoHoldTest() {
+  const duration = clamp(Number(params.get("autohold")) || 2800, 1200, 8000);
+  state.pointerDown = true;
+  beginLiveGeneration();
+  window.setTimeout(stopLiveGeneration, duration);
 }
 
 function roundedRect(ctx, x, y, width, height, radius) {

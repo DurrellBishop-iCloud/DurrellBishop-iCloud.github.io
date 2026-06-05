@@ -27,12 +27,13 @@ The app is static. Publish the folder with GitHub Pages from the repository root
 ## Current test features
 
 - Full-screen live camera.
-- One shutter button.
+- One shutter button: tap once for a still build, or hold it down to generate a new version about once per second.
 - White-on-dark silhouette detection.
 - Nearby separated parts use magnetic attraction before becoming 3D.
 - Close parallel flat edges are detected, pulled together, and slid into alignment so flats prefer flats.
 - Overlapping/touching white parts become visible merged silhouettes.
 - Colored robot palette inspired by the reference robots.
+- Rotating color palettes influenced by Nathalie Du Pasquier/Memphis-era painted constructions and cut-paper pattern work.
 - Shape grammar that mixes straight extrusions, very thin plates, deep blocks, one-sided tapers, curved ribbons, spheroids, and tube-like rings.
 - Separate geometry builders for outline lofts, ellipsoid/turned bodies, box prisms, and wedge prisms.
 - Mostly sharp-edged robot parts, with rounded volumes only when the silhouette suggests a curved object.

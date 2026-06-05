@@ -108,6 +108,16 @@ body.is-result .shutter-button::before {
   background: var(--red);
 }
 
+body.is-live-cycling .shutter-button {
+  border-color: var(--yellow);
+  transform: translateX(-50%) scale(0.94);
+}
+
+body.is-live-cycling .shutter-button::before {
+  background: var(--red);
+  animation: live-pulse 1000ms ease-in-out infinite;
+}
+
 body.is-starting .shutter-button,
 body.is-processing .shutter-button {
   border-color: var(--yellow);
@@ -163,6 +173,17 @@ body.is-error .shutter-button::before {
 
   50% {
     transform: scale(1);
+  }
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    transform: scale(0.54);
+  }
+
+  50% {
+    transform: scale(0.82);
   }
 }
 
