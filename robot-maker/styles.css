@@ -1,0 +1,164 @@
+:root {
+  color-scheme: dark;
+  --black: #07080a;
+  --white: #ffffff;
+  --red: #c71924;
+  --yellow: #f0bf1f;
+  --blue: #10284c;
+  --ink: #111318;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--black);
+}
+
+button {
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.camera-app {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: var(--black);
+  touch-action: none;
+}
+
+#cameraVideo,
+#robotCanvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+#cameraVideo {
+  object-fit: cover;
+  opacity: 1;
+  transition: opacity 180ms ease;
+}
+
+#robotCanvas {
+  display: block;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 220ms ease;
+}
+
+#captureCanvas {
+  display: none;
+}
+
+body.is-result #cameraVideo {
+  opacity: 0;
+}
+
+body.is-result #robotCanvas {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.shutter-button {
+  position: fixed;
+  left: 50%;
+  bottom: calc(22px + env(safe-area-inset-bottom));
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  width: 76px;
+  height: 76px;
+  margin: 0;
+  padding: 0;
+  border: 4px solid rgba(255, 255, 255, 0.94);
+  border-radius: 50%;
+  background: rgba(7, 8, 10, 0.18);
+  box-shadow: 0 0 0 1px rgba(7, 8, 10, 0.25), 0 10px 30px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  transform: translateX(-50%);
+  transition: transform 120ms ease, border-color 160ms ease, background 160ms ease;
+  backdrop-filter: blur(8px);
+}
+
+.shutter-button::before {
+  content: "";
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.94);
+  transition: transform 120ms ease, background 160ms ease;
+}
+
+.shutter-button:active {
+  transform: translateX(-50%) scale(0.94);
+}
+
+body.is-result .shutter-button::before {
+  transform: scale(0.7);
+  background: var(--red);
+}
+
+body.is-starting .shutter-button,
+body.is-processing .shutter-button {
+  border-color: var(--yellow);
+}
+
+body.is-starting .shutter-button::before,
+body.is-processing .shutter-button::before {
+  background: var(--yellow);
+  animation: pulse 900ms ease-in-out infinite;
+}
+
+body.is-error .shutter-button {
+  border-color: var(--red);
+}
+
+body.is-error .shutter-button::before {
+  background: var(--red);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+  white-space: nowrap;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(0.88);
+  }
+
+  50% {
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 520px) {
+  .shutter-button {
+    width: 72px;
+    height: 72px;
+    bottom: calc(18px + env(safe-area-inset-bottom));
+  }
+
+  .shutter-button::before {
+    width: 50px;
+    height: 50px;
+  }
+}

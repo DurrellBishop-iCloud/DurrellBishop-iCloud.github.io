@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>Robot Shape Maker</title>
+    <link rel="stylesheet" href="./styles.css?v=20260605-camera-11">
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./vendor/three/three.module.js",
+          "three/addons/": "./vendor/three/addons/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="camera-app" aria-label="Robot Shape Maker camera">
+      <video id="cameraVideo" autoplay playsinline muted></video>
+      <canvas id="robotCanvas" aria-label="3D robot preview"></canvas>
+      <canvas id="captureCanvas" width="1280" height="960" aria-hidden="true"></canvas>
+      <button id="shutterButton" class="shutter-button" type="button" aria-label="Take photo"></button>
+      <p id="appStatus" class="sr-only" aria-live="polite">Starting camera</p>
+    </main>
+
+    <script type="module" src="./app.js?v=20260605-camera-11"></script>
+  </body>
+</html>
