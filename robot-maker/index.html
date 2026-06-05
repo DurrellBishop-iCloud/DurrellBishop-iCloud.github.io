@@ -4,7 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>Robot Shape Maker</title>
-    <link rel="stylesheet" href="./styles.css?v=20260605-camera-11">
+    <script>
+      if (location.protocol === "http:" && location.hostname !== "localhost") {
+        location.replace(`https://${location.host}${location.pathname}${location.search}`);
+      }
+    </script>
+    <link rel="stylesheet" href="./styles.css?v=20260605-camera-12">
     <script type="importmap">
       {
         "imports": {
@@ -23,6 +28,6 @@
       <p id="appStatus" class="sr-only" aria-live="polite">Starting camera</p>
     </main>
 
-    <script type="module" src="./app.js?v=20260605-camera-11"></script>
+    <script type="module" src="./app.js?v=20260605-camera-12"></script>
   </body>
 </html>
