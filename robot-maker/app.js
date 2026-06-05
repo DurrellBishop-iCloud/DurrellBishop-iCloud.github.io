@@ -849,9 +849,9 @@ function normalizeSilhouettes(silhouettes, width, height) {
 }
 
 function magnetizeSilhouettes(silhouettes) {
-  const range = 0.62;
-  const snapRange = 0.18;
-  const contactGap = 0.008;
+  const range = 0.68;
+  const snapRange = 0.22;
+  const contactGap = 0.006;
   const maxStep = 0.085;
   const iterations = 30;
   const damping = 0.74;
@@ -860,6 +860,14 @@ function magnetizeSilhouettes(silhouettes) {
     mass: Math.max(1, Math.sqrt(silhouette.area)),
     velocity: { x: 0, y: 0 }
   }));
+
+  flatEdgeMagnetizeSilhouettes(silhouettes, {
+    range: 0.74,
+    contactGap,
+    iterations: 14,
+    strength: 0.86,
+    slideStrength: 0.32
+  });
 
   for (let iteration = 0; iteration < iterations; iteration += 1) {
     for (let aIndex = 0; aIndex < bodies.length; aIndex += 1) {
@@ -881,8 +889,207 @@ function magnetizeSilhouettes(silhouettes) {
     });
   }
 
+  flatEdgeMagnetizeSilhouettes(silhouettes, {
+    range: 0.48,
+    contactGap,
+    iterations: 10,
+    strength: 0.96,
+    slideStrength: 0.22
+  });
   snapCloseSurfaces(silhouettes, snapRange, contactGap);
+  flatEdgeMagnetizeSilhouettes(silhouettes, {
+    range: 0.3,
+    contactGap,
+    iterations: 5,
+    strength: 1,
+    slideStrength: 0.16
+  });
   return silhouettes;
+}
+
+function flatEdgeMagnetizeSilhouettes(silhouettes, options) {
+  for (let iteration = 0; iteration < options.iterations; iteration += 1) {
+    const edgeSets = silhouettes.map(findFlatEdges);
+
+    for (let aIndex = 0; aIndex < silhouettes.length; aIndex += 1) {
+      for (let bIndex = aIndex + 1; bIndex < silhouettes.length; bIndex += 1) {
+        const match = closestFlatEdgePair(edgeSets[aIndex], edgeSets[bIndex], options);
+        if (!match) continue;
+        applyFlatEdgeAttraction(silhouettes[aIndex], silhouettes[bIndex], match, options);
+      }
+    }
+  }
+}
+
+function findFlatEdges(silhouette) {
+  const points = silhouette.points;
+  const bounds = pathBounds(points);
+  const minEdgeLength = clamp(Math.min(bounds.width, bounds.height) * 0.13, 0.11, 0.42);
+  const edges = [];
+
+  for (let i = 0; i < points.length; i += 1) {
+    const a = points[i];
+    const b = points[(i + 1) % points.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = Math.hypot(dx, dy);
+    if (length < minEdgeLength) continue;
+
+    const tx = dx / length;
+    const ty = dy / length;
+    edges.push({
+      a,
+      b,
+      length,
+      tx,
+      ty,
+      mid: {
+        x: (a.x + b.x) / 2,
+        y: (a.y + b.y) / 2
+      }
+    });
+  }
+
+  if (silhouette.edgeMode !== "round") {
+    edges.push(...supportFlatEdges(points, bounds, minEdgeLength));
+  }
+
+  return edges;
+}
+
+function supportFlatEdges(points, bounds, minEdgeLength) {
+  const edges = [];
+  const tolerance = clamp(Math.min(bounds.width, bounds.height) * 0.075, 0.035, 0.16);
+  addHorizontalSupportEdge(edges, points, bounds, bounds.maxY, tolerance, minEdgeLength);
+  addHorizontalSupportEdge(edges, points, bounds, bounds.minY, tolerance, minEdgeLength);
+  addVerticalSupportEdge(edges, points, bounds, bounds.minX, tolerance, minEdgeLength);
+  addVerticalSupportEdge(edges, points, bounds, bounds.maxX, tolerance, minEdgeLength);
+  return edges;
+}
+
+function addHorizontalSupportEdge(edges, points, bounds, sideY, tolerance, minEdgeLength) {
+  if (bounds.width <= 0.001) return;
+  const band = points.filter((point) => Math.abs(point.y - sideY) <= tolerance);
+  if (band.length < 3) return;
+
+  const minX = Math.min(...band.map((point) => point.x));
+  const maxX = Math.max(...band.map((point) => point.x));
+  const length = maxX - minX;
+  if (length < Math.max(minEdgeLength, bounds.width * 0.36)) return;
+
+  edges.push({
+    a: { x: minX, y: sideY },
+    b: { x: maxX, y: sideY },
+    length,
+    tx: 1,
+    ty: 0,
+    mid: {
+      x: (minX + maxX) / 2,
+      y: sideY
+    },
+    support: true
+  });
+}
+
+function addVerticalSupportEdge(edges, points, bounds, sideX, tolerance, minEdgeLength) {
+  if (bounds.height <= 0.001) return;
+  const band = points.filter((point) => Math.abs(point.x - sideX) <= tolerance);
+  if (band.length < 3) return;
+
+  const minY = Math.min(...band.map((point) => point.y));
+  const maxY = Math.max(...band.map((point) => point.y));
+  const length = maxY - minY;
+  if (length < Math.max(minEdgeLength, bounds.height * 0.36)) return;
+
+  edges.push({
+    a: { x: sideX, y: minY },
+    b: { x: sideX, y: maxY },
+    length,
+    tx: 0,
+    ty: 1,
+    mid: {
+      x: sideX,
+      y: (minY + maxY) / 2
+    },
+    support: true
+  });
+}
+
+function closestFlatEdgePair(aEdges, bEdges, options) {
+  let best = null;
+
+  for (const a of aEdges) {
+    for (const b of bEdges) {
+      const parallel = Math.abs(a.tx * b.tx + a.ty * b.ty);
+      if (parallel < 0.9) continue;
+
+      const delta = {
+        x: b.mid.x - a.mid.x,
+        y: b.mid.y - a.mid.y
+      };
+      const tangent = { x: a.tx, y: a.ty };
+      let normal = { x: -a.ty, y: a.tx };
+      if (delta.x * normal.x + delta.y * normal.y < 0) {
+        normal = { x: -normal.x, y: -normal.y };
+      }
+
+      const normalGap = delta.x * normal.x + delta.y * normal.y;
+      if (normalGap <= options.contactGap || normalGap > options.range) continue;
+
+      const overlap = projectedSegmentOverlap(a, b, tangent);
+      const minOverlap = Math.min(a.length, b.length) * 0.18;
+      if (overlap < minOverlap) continue;
+
+      const tangentOffset = delta.x * tangent.x + delta.y * tangent.y;
+      const score = (parallel * overlap) / (normalGap + 0.025);
+
+      if (!best || score > best.score) {
+        best = {
+          a,
+          b,
+          normal,
+          tangent,
+          normalGap,
+          tangentOffset,
+          overlap,
+          score
+        };
+      }
+    }
+  }
+
+  return best;
+}
+
+function projectedSegmentOverlap(aEdge, bEdge, tangent) {
+  const a0 = aEdge.a.x * tangent.x + aEdge.a.y * tangent.y;
+  const a1 = aEdge.b.x * tangent.x + aEdge.b.y * tangent.y;
+  const b0 = bEdge.a.x * tangent.x + bEdge.a.y * tangent.y;
+  const b1 = bEdge.b.x * tangent.x + bEdge.b.y * tangent.y;
+  const aMin = Math.min(a0, a1);
+  const aMax = Math.max(a0, a1);
+  const bMin = Math.min(b0, b1);
+  const bMax = Math.max(b0, b1);
+  return Math.min(aMax, bMax) - Math.max(aMin, bMin);
+}
+
+function applyFlatEdgeAttraction(a, b, match, options) {
+  const totalArea = Math.max(1, a.area + b.area);
+  const moveAWeight = b.area / totalArea;
+  const moveBWeight = a.area / totalArea;
+  const normalPull = clamp((match.normalGap - options.contactGap) * options.strength, 0, 0.18);
+  const slidePull = clamp(match.tangentOffset * options.slideStrength, -0.12, 0.12);
+
+  translateSilhouette(
+    a,
+    match.normal.x * normalPull * moveAWeight + match.tangent.x * slidePull * moveAWeight,
+    match.normal.y * normalPull * moveAWeight + match.tangent.y * slidePull * moveAWeight
+  );
+  translateSilhouette(
+    b,
+    -match.normal.x * normalPull * moveBWeight - match.tangent.x * slidePull * moveBWeight,
+    -match.normal.y * normalPull * moveBWeight - match.tangent.y * slidePull * moveBWeight
+  );
 }
 
 function applySurfaceMagnetism(aBody, bBody, options) {

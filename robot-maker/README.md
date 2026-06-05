@@ -29,7 +29,8 @@ The app is static. Publish the folder with GitHub Pages from the repository root
 - Full-screen live camera.
 - One shutter button.
 - White-on-dark silhouette detection.
-- Nearby separated parts use stronger nearest-surface attraction before becoming 3D.
+- Nearby separated parts use magnetic attraction before becoming 3D.
+- Close parallel flat edges are detected, pulled together, and slid into alignment so flats prefer flats.
 - Overlapping/touching white parts become visible merged silhouettes.
 - Colored robot palette inspired by the reference robots.
 - Shape grammar that mixes straight extrusions, very thin plates, deep blocks, one-sided tapers, curved ribbons, spheroids, and tube-like rings.
