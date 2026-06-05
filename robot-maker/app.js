@@ -476,9 +476,8 @@ function detectWhiteSilhouettes(sourceCanvas, options = {}) {
   ctx.drawImage(sourceCanvas, 0, 0, processCanvas.width, processCanvas.height);
 
   const image = ctx.getImageData(0, 0, processCanvas.width, processCanvas.height);
-  const luminance = getLuminance(image.data);
-  const threshold = Math.max(95, otsuThreshold(luminance) + 8);
-  const mask = makeWhiteMask(luminance, image.width, image.height, threshold);
+  const metrics = getPixelMetrics(image.data);
+  const mask = makeWhiteMask(metrics, image.width, image.height);
   const components = findComponents(mask, image.width, image.height);
   const rawSilhouettes = components
     .map((component) => componentToSilhouette(component, mask, image.width, image.height))
@@ -487,53 +486,85 @@ function detectWhiteSilhouettes(sourceCanvas, options = {}) {
   return normalizeSilhouettes(rawSilhouettes, image.width, image.height, options);
 }
 
-function getLuminance(data) {
-  const luminance = new Uint8Array(data.length / 4);
+function getPixelMetrics(data) {
+  const length = data.length / 4;
+  const luminance = new Uint8Array(length);
+  const minChannel = new Uint8Array(length);
+  const chroma = new Uint8Array(length);
+  const whiteScore = new Uint8Array(length);
+
   for (let i = 0, p = 0; i < data.length; i += 4, p += 1) {
-    luminance[p] = Math.round(0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2]);
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const y = Math.round(0.2126 * r + 0.7152 * g + 0.0722 * b);
+    const low = Math.min(r, g, b);
+    const high = Math.max(r, g, b);
+    const spread = high - low;
+
+    luminance[p] = y;
+    minChannel[p] = low;
+    chroma[p] = spread;
+    whiteScore[p] = clampByte(y * 0.58 + low * 0.62 - spread * 1.25);
   }
-  return luminance;
+
+  return { luminance, minChannel, chroma, whiteScore };
 }
 
-function otsuThreshold(values) {
+function makeWhiteMask(metrics, width, height) {
+  const { luminance, minChannel, chroma, whiteScore } = metrics;
+  const scoreHistogram = valueHistogram(whiteScore);
+  const lumaHistogram = valueHistogram(luminance);
+  const backgroundScore = percentileFromHistogram(scoreHistogram, 0.58, whiteScore.length);
+  const highScore = percentileFromHistogram(scoreHistogram, 0.985, whiteScore.length);
+  const backgroundLuma = percentileFromHistogram(lumaHistogram, 0.58, luminance.length);
+  const highLuma = percentileFromHistogram(lumaHistogram, 0.985, luminance.length);
+  const scoreThreshold = clamp(backgroundScore + (highScore - backgroundScore) * 0.52, 132, 212);
+  const lumaThreshold = clamp(backgroundLuma + (highLuma - backgroundLuma) * 0.48, 118, 205);
+  const minChannelThreshold = clamp(backgroundLuma + (highLuma - backgroundLuma) * 0.34, 92, 182);
+  const mask = new Uint8Array(width * height);
+
+  for (let i = 0; i < whiteScore.length; i += 1) {
+    const y = luminance[i];
+    const score = whiteScore[i];
+    const maxChroma = y > 188 ? 64 : 48;
+    const isPaperWhite =
+      score >= scoreThreshold &&
+      y >= lumaThreshold &&
+      minChannel[i] >= minChannelThreshold &&
+      chroma[i] <= maxChroma;
+    const isVeryBrightNeutral =
+      score >= scoreThreshold + 24 &&
+      y >= lumaThreshold + 8 &&
+      minChannel[i] >= minChannelThreshold + 8 &&
+      chroma[i] <= maxChroma + 10;
+
+    mask[i] = isPaperWhite || isVeryBrightNeutral ? 1 : 0;
+  }
+
+  return closeMask(openMask(mask, width, height), width, height);
+}
+
+function valueHistogram(values) {
   const histogram = new Uint32Array(256);
   for (const value of values) histogram[value] += 1;
-
-  const total = values.length;
-  let sum = 0;
-  for (let i = 0; i < 256; i += 1) sum += i * histogram[i];
-
-  let sumBackground = 0;
-  let weightBackground = 0;
-  let maxVariance = 0;
-  let threshold = 128;
-
-  for (let i = 0; i < 256; i += 1) {
-    weightBackground += histogram[i];
-    if (weightBackground === 0) continue;
-    const weightForeground = total - weightBackground;
-    if (weightForeground === 0) break;
-
-    sumBackground += i * histogram[i];
-    const meanBackground = sumBackground / weightBackground;
-    const meanForeground = (sum - sumBackground) / weightForeground;
-    const variance = weightBackground * weightForeground * (meanBackground - meanForeground) ** 2;
-
-    if (variance > maxVariance) {
-      maxVariance = variance;
-      threshold = i;
-    }
-  }
-
-  return threshold;
+  return histogram;
 }
 
-function makeWhiteMask(luminance, width, height, threshold) {
-  const mask = new Uint8Array(width * height);
-  for (let i = 0; i < luminance.length; i += 1) {
-    mask[i] = luminance[i] >= threshold ? 1 : 0;
+function percentileFromHistogram(histogram, percentile, total) {
+  const target = Math.max(0, Math.min(total - 1, Math.floor(total * percentile)));
+  let count = 0;
+
+  for (let value = 0; value < histogram.length; value += 1) {
+    count += histogram[value];
+    if (count > target) return value;
   }
-  return closeMask(openMask(mask, width, height), width, height);
+
+  return histogram.length - 1;
+}
+
+function clampByte(value) {
+  return Math.max(0, Math.min(255, Math.round(value)));
 }
 
 function openMask(mask, width, height) {
@@ -628,7 +659,13 @@ function findComponents(mask, width, height) {
       }
     }
 
+    const componentWidth = maxX - minX + 1;
+    const componentHeight = maxY - minY + 1;
+    const fill = area / (componentWidth * componentHeight);
+
     if (area < minArea || area > maxArea) continue;
+    if (componentWidth < 5 || componentHeight < 5) continue;
+    if (fill < 0.18 && area < width * height * 0.035) continue;
 
     components.push({
       area,
@@ -637,8 +674,9 @@ function findComponents(mask, width, height) {
       minY,
       maxX,
       maxY,
-      width: maxX - minX + 1,
-      height: maxY - minY + 1,
+      width: componentWidth,
+      height: componentHeight,
+      fill,
       cx: sumX / area,
       cy: sumY / area
     });

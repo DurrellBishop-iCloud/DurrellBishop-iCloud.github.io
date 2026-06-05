@@ -28,7 +28,7 @@ The app is static. Publish the folder with GitHub Pages from the repository root
 
 - Full-screen live camera.
 - One shutter button: tap once for a still build, or hold it down to generate a new version about once per second.
-- White-on-dark silhouette detection.
+- White-on-dark silhouette detection using a paper-white confidence mask instead of brightness alone.
 - Nearby separated parts use magnetic attraction before becoming 3D.
 - Close parallel flat edges are detected, pulled together, and slid into alignment so flats prefer flats.
 - Overlapping/touching white parts become visible merged silhouettes.
