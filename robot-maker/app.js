@@ -6,8 +6,18 @@ const ROBOT_COLORS = {
   black: "#111318",
   red: "#c71924",
   yellow: "#f0bf1f",
-  navy: "#10284c"
+  navy: "#10284c",
+  grey: "#d8d6cd"
 };
+
+const ROBOT_PALETTE = [
+  ROBOT_COLORS.white,
+  ROBOT_COLORS.black,
+  ROBOT_COLORS.red,
+  ROBOT_COLORS.yellow,
+  ROBOT_COLORS.navy,
+  ROBOT_COLORS.grey
+];
 
 const els = {
   video: document.querySelector("#cameraVideo"),
@@ -825,7 +835,7 @@ function normalizeSilhouettes(silhouettes, width, height) {
     };
   });
 
-  return assignVolumeStyles(colorizeSilhouettes(magnetizeSilhouettes(normalized)));
+  return assignSurfaceStyles(assignVolumeStyles(colorizeSilhouettes(magnetizeSilhouettes(normalized))));
 }
 
 function magnetizeSilhouettes(silhouettes) {
@@ -1041,6 +1051,56 @@ function assignVolumeStyles(silhouettes) {
   });
 
   return silhouettes;
+}
+
+function assignSurfaceStyles(silhouettes) {
+  silhouettes.forEach((silhouette, index) => {
+    const seed = shapeSeed(silhouette, index + 53);
+    const bounds = pathBounds(silhouette.points);
+    const aspect = bounds.width / Math.max(0.001, bounds.height);
+    const styleIndex = Math.floor(seed * 1000 + index * 7) % 6;
+    let pattern = "solid";
+
+    if (styleIndex === 1 || (aspect > 2.1 && seed > 0.32)) {
+      pattern = "stripes";
+    } else if (styleIndex === 2 || silhouette.volumeStyle?.kind === "facetedBlock") {
+      pattern = "facePaint";
+    } else if (styleIndex === 3 || silhouette.holes.length > 0) {
+      pattern = "splitPaint";
+    } else if (styleIndex === 4 && silhouette.volumeStyle?.kind !== "flatBlade") {
+      pattern = "patchPaint";
+    }
+
+    const finish = seed > 0.56 || silhouette.volumeStyle?.smooth ? "glossy" : "matte";
+    const accents = pickAccentColors(silhouette.color, seed, 4);
+
+    silhouette.surfaceStyle = {
+      finish,
+      pattern,
+      baseColor: silhouette.color ?? ROBOT_COLORS.white,
+      accentColors: accents,
+      splitAngle: seed * Math.PI * 2,
+      splitOffset: (seed - 0.5) * 0.55,
+      stripeAxis: aspect > 1.6 ? "x" : "y",
+      stripeScale: 4.2 + seed * 5.6,
+      stripeOffset: seed * 3.7,
+      patchScale: 1.2 + seed * 1.8
+    };
+  });
+
+  return silhouettes;
+}
+
+function pickAccentColors(baseColor, seed, count) {
+  const available = ROBOT_PALETTE.filter((color) => color !== baseColor);
+  const colors = [];
+  let offset = Math.floor(seed * available.length);
+
+  for (let i = 0; i < count; i += 1) {
+    colors.push(available[(offset + i * 2) % available.length]);
+  }
+
+  return colors;
 }
 
 function volumeStyleForKind(kind, silhouette, metrics) {
@@ -1268,8 +1328,118 @@ function createDynamicSilhouetteGeometry(silhouette) {
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.userData.profile = profile;
-  geometry.computeVertexNormals();
+  const paintedGeometry = paintGeometrySurfaces(geometry, silhouette);
+  paintedGeometry.userData.profile = profile;
+  paintedGeometry.computeVertexNormals();
+  return paintedGeometry;
+}
+
+function paintGeometrySurfaces(indexedGeometry, silhouette) {
+  const position = indexedGeometry.getAttribute("position");
+  const index = indexedGeometry.getIndex();
+  const paintedPositions = [];
+  const colors = [];
+  const style = silhouette.surfaceStyle ?? {
+    pattern: "solid",
+    baseColor: silhouette.color ?? ROBOT_COLORS.white,
+    accentColors: pickAccentColors(silhouette.color ?? ROBOT_COLORS.white, 0.5, 4)
+  };
+
+  for (let i = 0; i < index.count; i += 3) {
+    const a = vertexFromAttribute(position, index.getX(i));
+    const b = vertexFromAttribute(position, index.getX(i + 1));
+    const c = vertexFromAttribute(position, index.getX(i + 2));
+    const centroid = {
+      x: (a.x + b.x + c.x) / 3,
+      y: (a.y + b.y + c.y) / 3,
+      z: (a.z + b.z + c.z) / 3
+    };
+    const normal = triangleNormal(a, b, c);
+    const color = colorForSurfaceTriangle(style, centroid, normal, i / 3);
+
+    [a, b, c].forEach((point) => {
+      paintedPositions.push(point.x, point.y, point.z);
+      colors.push(color.r, color.g, color.b);
+    });
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(paintedPositions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
   return geometry;
+}
+
+function vertexFromAttribute(attribute, index) {
+  return {
+    x: attribute.getX(index),
+    y: attribute.getY(index),
+    z: attribute.getZ(index)
+  };
+}
+
+function triangleNormal(a, b, c) {
+  const ab = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  const ac = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
+  const normal = {
+    x: ab.y * ac.z - ab.z * ac.y,
+    y: ab.z * ac.x - ab.x * ac.z,
+    z: ab.x * ac.y - ab.y * ac.x
+  };
+  const length = Math.hypot(normal.x, normal.y, normal.z) || 1;
+  return {
+    x: normal.x / length,
+    y: normal.y / length,
+    z: normal.z / length
+  };
+}
+
+function colorForSurfaceTriangle(style, centroid, normal, faceIndex) {
+  const base = colorObject(style.baseColor);
+  const accents = style.accentColors.map(colorObject);
+  let color = base;
+
+  if (style.pattern === "stripes") {
+    const axisValue = style.stripeAxis === "x" ? centroid.x : centroid.y;
+    const stripe = Math.floor((axisValue + style.stripeOffset) * style.stripeScale);
+    color = stripe % 2 === 0 ? base : accents[0];
+  } else if (style.pattern === "facePaint") {
+    const faceBucket = Math.abs(normal.z) > 0.72
+      ? (normal.z > 0 ? 0 : 1)
+      : Math.floor((Math.atan2(normal.y, normal.x) + Math.PI) / (Math.PI / 2));
+    color = [base, ...accents][faceBucket % (accents.length + 1)];
+  } else if (style.pattern === "splitPaint") {
+    const split =
+      centroid.x * Math.cos(style.splitAngle) +
+      centroid.y * Math.sin(style.splitAngle) +
+      centroid.z * 0.42;
+    color = split > style.splitOffset ? accents[0] : base;
+  } else if (style.pattern === "patchPaint") {
+    const patch = Math.floor((centroid.x * 1.7 + centroid.y * 2.3 + centroid.z * 1.1) * style.patchScale + faceIndex * 0.17);
+    color = [base, ...accents][Math.abs(patch) % (accents.length + 1)];
+  }
+
+  if (Math.abs(normal.z) < 0.18) {
+    color = mixColor(color, colorObject(ROBOT_COLORS.black), 0.08);
+  }
+
+  return color;
+}
+
+function colorObject(color) {
+  const value = color.replace("#", "");
+  return {
+    r: parseInt(value.slice(0, 2), 16) / 255,
+    g: parseInt(value.slice(2, 4), 16) / 255,
+    b: parseInt(value.slice(4, 6), 16) / 255
+  };
+}
+
+function mixColor(a, b, amount) {
+  return {
+    r: a.r * (1 - amount) + b.r * amount,
+    g: a.g * (1 - amount) + b.g * amount,
+    b: a.b * (1 - amount) + b.b * amount
+  };
 }
 
 function volumeProfileForSilhouette(silhouette) {
@@ -1400,11 +1570,15 @@ function rebuildScene(silhouettes) {
     const geometry = createDynamicSilhouetteGeometry(silhouette);
     const profile = geometry.userData.profile ?? {};
 
-    const material = new THREE.MeshStandardMaterial({
-      color: silhouette.color ?? ROBOT_COLORS.white,
-      roughness: profile.smooth ? 0.7 : 0.58,
-      metalness: 0,
+    const finish = silhouette.surfaceStyle?.finish ?? "matte";
+    const material = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff,
+      roughness: finish === "glossy" ? 0.18 : (profile.smooth ? 0.64 : 0.86),
+      metalness: finish === "glossy" ? 0.03 : 0,
+      clearcoat: finish === "glossy" ? 0.72 : 0,
+      clearcoatRoughness: finish === "glossy" ? 0.16 : 0.84,
       flatShading: !profile.smooth,
+      vertexColors: true,
       side: THREE.DoubleSide
     });
     const mesh = new THREE.Mesh(geometry, material);
