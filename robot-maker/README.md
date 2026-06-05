@@ -29,10 +29,11 @@ The app is static. Publish the folder with GitHub Pages from the repository root
 - Full-screen live camera.
 - One shutter button.
 - White-on-dark silhouette detection.
-- Nearby separated parts attract gently before becoming 3D.
+- Nearby separated parts use stronger nearest-surface attraction before becoming 3D.
 - Overlapping/touching white parts become visible merged silhouettes.
 - Colored robot palette inspired by the reference robots.
-- Shape grammar that mixes straight extrusions, flat blades, one-sided tapers, curved ribbons, spheroids, and tube-like rings.
+- Shape grammar that mixes straight extrusions, very thin plates, deep blocks, one-sided tapers, curved ribbons, spheroids, and tube-like rings.
 - Mostly sharp-edged robot parts, with rounded volumes only when the silhouette suggests a curved object.
+- Lit mesh rendering without the drawn black edge-line overlay.
 
 For desktop testing without a camera, open `http://localhost:4173/?test`.

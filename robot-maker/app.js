@@ -128,6 +128,8 @@ function initScene() {
   });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.06;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -158,7 +160,13 @@ function initScene() {
   key.shadow.camera.right = 6;
   key.shadow.camera.top = 6;
   key.shadow.camera.bottom = -6;
+  key.shadow.bias = -0.0002;
+  key.shadow.normalBias = 0.035;
   scene.add(key);
+
+  const side = new THREE.DirectionalLight(0xfff4dd, 1.15);
+  side.position.set(-4.5, 2.2, -5.5);
+  scene.add(side);
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(14, 10),
@@ -806,7 +814,7 @@ function normalizeSilhouettes(silhouettes, width, height) {
         }));
       }),
       depth: clamp(Math.min(bounds.width, bounds.height) * 0.2, 0.14, 0.72),
-      z: index * 0.11,
+      z: 0,
       area: silhouette.area,
       edgeMode: silhouette.edgeMode,
       smoothOuter: silhouette.smoothOuter,
@@ -821,33 +829,83 @@ function normalizeSilhouettes(silhouettes, width, height) {
 }
 
 function magnetizeSilhouettes(silhouettes) {
-  const range = 0.28;
-  const minGap = 0.018;
-  const maxStep = 0.045;
-  const iterations = 7;
+  const range = 0.62;
+  const snapRange = 0.18;
+  const contactGap = 0.008;
+  const maxStep = 0.085;
+  const iterations = 30;
+  const damping = 0.74;
+  const bodies = silhouettes.map((silhouette) => ({
+    silhouette,
+    mass: Math.max(1, Math.sqrt(silhouette.area)),
+    velocity: { x: 0, y: 0 }
+  }));
 
   for (let iteration = 0; iteration < iterations; iteration += 1) {
-    for (let aIndex = 0; aIndex < silhouettes.length; aIndex += 1) {
-      for (let bIndex = aIndex + 1; bIndex < silhouettes.length; bIndex += 1) {
-        const a = silhouettes[aIndex];
-        const b = silhouettes[bIndex];
-        const closest = closestPathPoints(a.points, b.points);
-        if (!closest || closest.distance <= minGap || closest.distance > range) continue;
-
-        const dx = (closest.b.x - closest.a.x) / closest.distance;
-        const dy = (closest.b.y - closest.a.y) / closest.distance;
-        const pull = Math.min((range - closest.distance) * 0.22, closest.distance * 0.48, maxStep);
-        const totalArea = Math.max(1, a.area + b.area);
-        const moveA = pull * (b.area / totalArea);
-        const moveB = pull * (a.area / totalArea);
-
-        translateSilhouette(a, dx * moveA, dy * moveA);
-        translateSilhouette(b, -dx * moveB, -dy * moveB);
+    for (let aIndex = 0; aIndex < bodies.length; aIndex += 1) {
+      for (let bIndex = aIndex + 1; bIndex < bodies.length; bIndex += 1) {
+        applySurfaceMagnetism(bodies[aIndex], bodies[bIndex], {
+          range,
+          snapRange,
+          contactGap
+        });
       }
     }
+
+    bodies.forEach((body) => {
+      const dx = clamp(body.velocity.x, -maxStep, maxStep);
+      const dy = clamp(body.velocity.y, -maxStep, maxStep);
+      translateSilhouette(body.silhouette, dx, dy);
+      body.velocity.x = (body.velocity.x - dx) * damping;
+      body.velocity.y = (body.velocity.y - dy) * damping;
+    });
   }
 
+  snapCloseSurfaces(silhouettes, snapRange, contactGap);
   return silhouettes;
+}
+
+function applySurfaceMagnetism(aBody, bBody, options) {
+  const closest = closestPathPoints(aBody.silhouette.points, bBody.silhouette.points);
+  if (!closest || closest.distance <= options.contactGap || closest.distance > options.range) return;
+
+  const nx = (closest.b.x - closest.a.x) / closest.distance;
+  const ny = (closest.b.y - closest.a.y) / closest.distance;
+  const falloff = (options.range - closest.distance) / options.range;
+  const surfacePull = falloff * falloff * 0.066;
+  const snapPull = closest.distance < options.snapRange
+    ? (options.snapRange - closest.distance) * 0.46
+    : 0;
+  const pull = surfacePull + snapPull;
+  const totalMass = Math.max(1, aBody.mass + bBody.mass);
+  const moveA = pull * (bBody.mass / totalMass);
+  const moveB = pull * (aBody.mass / totalMass);
+
+  aBody.velocity.x += nx * moveA;
+  aBody.velocity.y += ny * moveA;
+  bBody.velocity.x -= nx * moveB;
+  bBody.velocity.y -= ny * moveB;
+}
+
+function snapCloseSurfaces(silhouettes, snapRange, contactGap) {
+  for (let aIndex = 0; aIndex < silhouettes.length; aIndex += 1) {
+    for (let bIndex = aIndex + 1; bIndex < silhouettes.length; bIndex += 1) {
+      const a = silhouettes[aIndex];
+      const b = silhouettes[bIndex];
+      const closest = closestPathPoints(a.points, b.points);
+      if (!closest || closest.distance <= contactGap || closest.distance > snapRange) continue;
+
+      const nx = (closest.b.x - closest.a.x) / closest.distance;
+      const ny = (closest.b.y - closest.a.y) / closest.distance;
+      const pull = (closest.distance - contactGap) * 0.82;
+      const totalArea = Math.max(1, a.area + b.area);
+      const moveA = pull * (b.area / totalArea);
+      const moveB = pull * (a.area / totalArea);
+
+      translateSilhouette(a, nx * moveA, ny * moveA);
+      translateSilhouette(b, -nx * moveB, -ny * moveB);
+    }
+  }
 }
 
 function closestPathPoints(aPoints, bPoints) {
@@ -940,14 +998,22 @@ function assignVolumeStyles(silhouettes) {
       } else if (slotCanBeRounded) {
         kind = "roundedSlot";
       } else {
-        kind = seed > 0.5 ? "piercedTaper" : "piercedBlock";
+        kind = maxSize > 1.55 || seed > 0.42 ? "piercedTaper" : "piercedBlock";
       }
     } else if (isRoundish && aspect > 0.72 && aspect < 1.38) {
       kind = seed > 0.36 ? "spheroid" : "oneSidedDome";
     } else if (isRoundish) {
       kind = aspect > 1 ? "roundedBeam" : "roundedColumn";
     } else if (aspect > 3.2) {
-      kind = seed > 0.42 ? "curvedRibbon" : "flatBlade";
+      if (heightRank === 0) {
+        kind = "curvedRibbon";
+      } else if (seed > 0.72) {
+        kind = "flatBlade";
+      } else if (seed > 0.34) {
+        kind = "curvedRibbon";
+      } else {
+        kind = "wedgeBeam";
+      }
     } else if (aspect > 1.85) {
       kind = seed > 0.52 ? "wedgeBeam" : "straightExtrusion";
     } else if (aspect < 0.56) {
@@ -971,6 +1037,7 @@ function assignVolumeStyles(silhouettes) {
       seed
     });
     silhouette.depth = silhouette.volumeStyle.depth;
+    silhouette.z = (silhouette.volumeStyle.zOffset ?? 0) + index * 0.035;
   });
 
   return silhouettes;
@@ -979,134 +1046,136 @@ function assignVolumeStyles(silhouettes) {
 function volumeStyleForKind(kind, silhouette, metrics) {
   const { aspect, minSize, maxSize, seed } = metrics;
   const axis = aspect >= 1 ? "horizontal" : "vertical";
-  const sizeDepth = (factor, min, max) => clamp(minSize * factor + seed * minSize * 0.08, min, max);
+  const spread = 0.55 + seed * 2.25;
+  const sizeDepth = (factor, min, max) => clamp(minSize * factor * spread, min, max);
+  const offset = (amount) => clamp((seed - 0.5) * minSize * amount, -0.68, 0.68);
 
   switch (kind) {
     case "ringTube":
       return {
         kind,
-        depth: clamp(maxSize * 0.34, 0.38, 1.18),
+        depth: clamp(maxSize * (0.42 + seed * 0.46), 0.46, 1.8),
         smooth: true,
-        edgeOpacity: 0.22,
-        edgeAngle: 40
+        sideShade: 0.9,
+        zOffset: offset(0.75)
       };
     case "roundedSlot":
       return {
         kind,
-        depth: clamp(minSize * 0.92, 0.32, 0.86),
+        depth: clamp(minSize * (0.9 + seed * 1.15), 0.34, 1.35),
         smooth: true,
         axis,
-        edgeOpacity: 0.2,
-        edgeAngle: 44
+        sideShade: 0.9,
+        zOffset: offset(0.85)
       };
     case "spheroid":
       return {
         kind,
-        depth: clamp(maxSize * 0.68, 0.5, 1.55),
+        depth: clamp(maxSize * (0.7 + seed * 0.72), 0.62, 2.3),
         smooth: true,
-        edgeOpacity: 0.14,
-        edgeAngle: 50
+        sideShade: 0.92,
+        zOffset: offset(0.75)
       };
     case "oneSidedDome":
       return {
         kind,
-        depth: clamp(maxSize * 0.46, 0.34, 1.08),
+        depth: clamp(maxSize * (0.5 + seed * 0.68), 0.42, 1.65),
         smooth: true,
-        edgeOpacity: 0.18,
-        edgeAngle: 46
+        sideShade: 0.9,
+        zOffset: offset(0.8)
       };
     case "roundedBeam":
     case "roundedColumn":
       return {
         kind,
-        depth: sizeDepth(0.82, 0.28, 0.88),
+        depth: sizeDepth(0.82, 0.34, 1.5),
         smooth: true,
         axis,
-        edgeOpacity: 0.2,
-        edgeAngle: 44
+        sideShade: 0.9,
+        zOffset: offset(0.75)
       };
     case "curvedRibbon":
       return {
         kind,
-        depth: sizeDepth(1.15, 0.28, 0.76),
+        depth: sizeDepth(1.1, 0.32, 1.35),
         smooth: true,
         axis,
-        edgeOpacity: 0.18,
-        edgeAngle: 42
+        sideShade: 0.88,
+        zOffset: offset(1.05)
       };
     case "flatBlade":
       return {
         kind,
-        depth: sizeDepth(0.18, 0.12, 0.26),
+        depth: sizeDepth(0.08, 0.06, 0.18),
         smooth: false,
-        edgeOpacity: 0.72,
-        edgeAngle: 8
+        sideShade: 0.7,
+        zOffset: offset(0.35)
       };
     case "flatFoot":
       return {
         kind,
-        depth: sizeDepth(0.24, 0.14, 0.34),
+        depth: sizeDepth(0.16, 0.1, 0.34),
         smooth: false,
-        edgeOpacity: 0.7,
-        edgeAngle: 8
+        sideShade: 0.72,
+        zOffset: offset(0.42)
       };
     case "wedgeBeam":
       return {
         kind,
-        depth: sizeDepth(0.55, 0.26, 0.78),
+        depth: sizeDepth(0.82, 0.34, 1.4),
         smooth: false,
         axis,
-        edgeOpacity: 0.68,
-        edgeAngle: 12
+        sideShade: 0.78,
+        zOffset: offset(1)
       };
     case "sharpColumn":
       return {
         kind,
-        depth: sizeDepth(0.44, 0.22, 0.7),
+        depth: sizeDepth(0.68, 0.28, 1.25),
         smooth: false,
-        edgeOpacity: 0.7,
-        edgeAngle: 10
+        sideShade: 0.78,
+        zOffset: offset(0.58)
       };
     case "piercedBlock":
       return {
         kind,
-        depth: sizeDepth(0.38, 0.24, 0.7),
+        depth: sizeDepth(0.62, 0.32, 1.35),
         smooth: false,
-        edgeOpacity: 0.72,
-        edgeAngle: 10
+        sideShade: 0.78,
+        zOffset: offset(0.42)
       };
     case "piercedTaper":
       return {
         kind,
-        depth: sizeDepth(0.48, 0.26, 0.78),
+        depth: sizeDepth(0.82, 0.38, 1.5),
         smooth: false,
-        edgeOpacity: 0.68,
-        edgeAngle: 12
+        sideShade: 0.78,
+        zOffset: offset(0.58)
       };
     case "oneSidedTaper":
       return {
         kind,
-        depth: sizeDepth(0.5, 0.24, 0.82),
+        depth: sizeDepth(0.88, 0.34, 1.55),
         smooth: false,
-        edgeOpacity: 0.66,
-        edgeAngle: 12
+        sideShade: 0.78,
+        zOffset: offset(0.62)
       };
     case "facetedBlock":
       return {
         kind,
-        depth: sizeDepth(0.48, 0.24, 0.76),
+        depth: sizeDepth(0.72, 0.34, 1.35),
         smooth: false,
-        edgeOpacity: 0.66,
-        edgeAngle: 12
+        sideShade: 0.78,
+        zOffset: offset(0.7)
       };
     case "straightExtrusion":
     default:
       return {
         kind: "straightExtrusion",
-        depth: sizeDepth(0.32, 0.18, 0.58),
+        depth: sizeDepth(0.38, 0.14, 1.05),
         smooth: false,
-        edgeOpacity: 0.7,
-        edgeAngle: 8
+        sideShade: 0.74,
+        zOffset: offset(0.7)
       };
   }
 }
@@ -1208,15 +1277,13 @@ function volumeProfileForSilhouette(silhouette) {
     kind: "straightExtrusion",
     depth: silhouette.depth,
     smooth: false,
-    edgeOpacity: 0.7,
-    edgeAngle: 8
+    sideShade: 0.78
   };
   const z = (value) => value * style.depth;
   const profile = {
     kind: style.kind,
     smooth: style.smooth,
-    edgeOpacity: style.edgeOpacity,
-    edgeAngle: style.edgeAngle,
+    sideShade: style.sideShade,
     layers: []
   };
   const axisIsHorizontal = style.axis !== "vertical";
@@ -1322,7 +1389,7 @@ function ensureCounterClockwise(points) {
 function rebuildScene(silhouettes) {
   disposeGroup(shapeGroup);
   shapeGroup.clear();
-  shapeGroup.rotation.set(-0.08, 0.42, 0);
+  shapeGroup.rotation.set(-0.08, 0.62, 0);
 
   if (silhouettes.length === 0) {
     addFallbackShape();
@@ -1335,25 +1402,15 @@ function rebuildScene(silhouettes) {
 
     const material = new THREE.MeshStandardMaterial({
       color: silhouette.color ?? ROBOT_COLORS.white,
-      roughness: 0.78,
-      metalness: 0.02,
+      roughness: profile.smooth ? 0.7 : 0.58,
+      metalness: 0,
       flatShading: !profile.smooth,
       side: THREE.DoubleSide
     });
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
-    mesh.receiveShadow = true;
+    mesh.receiveShadow = false;
     shapeGroup.add(mesh);
-
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geometry, profile.edgeAngle ?? 12),
-      new THREE.LineBasicMaterial({
-        color: isDarkColor(silhouette.color) ? 0xffffff : 0x111318,
-        transparent: true,
-        opacity: profile.edgeOpacity ?? 0.68
-      })
-    );
-    shapeGroup.add(edges);
 
   });
 }
