@@ -31,6 +31,7 @@ The app is static. Publish the folder with GitHub Pages from the repository root
 - White-on-dark silhouette detection using a paper-white confidence mask instead of brightness alone.
 - Nearby separated parts use magnetic attraction before becoming 3D.
 - Close parallel flat edges are detected, pulled together, and slid into alignment so flats prefer flats.
+- Any remaining disconnected island is pulled into its nearest cluster so parts do not float on their own.
 - Overlapping/touching white parts become visible merged silhouettes.
 - Colored robot palette inspired by the reference robots.
 - Rotating color palettes influenced by Nathalie Du Pasquier/Memphis-era painted constructions and cut-paper pattern work.

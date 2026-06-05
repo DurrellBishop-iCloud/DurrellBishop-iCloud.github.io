@@ -1156,6 +1156,25 @@ function magnetizeSilhouettes(silhouettes) {
     strength: 1,
     slideStrength: 0.16
   });
+  connectFloatingSilhouettes(silhouettes, {
+    contactGap,
+    touchingDistance: 0.045,
+    maxIterations: Math.min(20, silhouettes.length * 2)
+  });
+  snapCloseSurfaces(silhouettes, 0.09, contactGap);
+  flatEdgeMagnetizeSilhouettes(silhouettes, {
+    range: 0.18,
+    contactGap,
+    iterations: 4,
+    strength: 1,
+    slideStrength: 0.14
+  });
+  connectFloatingSilhouettes(silhouettes, {
+    contactGap,
+    touchingDistance: 0.075,
+    maxIterations: Math.min(24, silhouettes.length * 3)
+  });
+  snapCloseSurfaces(silhouettes, 0.11, contactGap);
   return silhouettes;
 }
 
@@ -1387,6 +1406,105 @@ function snapCloseSurfaces(silhouettes, snapRange, contactGap) {
   }
 }
 
+function connectFloatingSilhouettes(silhouettes, options) {
+  if (silhouettes.length < 2) return;
+
+  for (let iteration = 0; iteration < options.maxIterations; iteration += 1) {
+    const groups = connectedSilhouetteGroups(silhouettes, options.touchingDistance);
+    if (groups.length <= 1) return;
+
+    const match = closestGroupPair(groups);
+    if (!match || match.distance <= options.contactGap) return;
+
+    const pull = match.distance - options.contactGap;
+    const nx = (match.bPoint.x - match.aPoint.x) / match.distance;
+    const ny = (match.bPoint.y - match.aPoint.y) / match.distance;
+    const totalArea = Math.max(1, match.aArea + match.bArea);
+    const moveA = pull * (match.bArea / totalArea);
+    const moveB = pull * (match.aArea / totalArea);
+
+    translateSilhouetteGroup(match.aGroup, nx * moveA, ny * moveA);
+    translateSilhouetteGroup(match.bGroup, -nx * moveB, -ny * moveB);
+  }
+}
+
+function connectedSilhouetteGroups(silhouettes, touchingDistance) {
+  const parent = silhouettes.map((_, index) => index);
+
+  function find(index) {
+    while (parent[index] !== index) {
+      parent[index] = parent[parent[index]];
+      index = parent[index];
+    }
+    return index;
+  }
+
+  function unite(a, b) {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent[rootB] = rootA;
+  }
+
+  for (let aIndex = 0; aIndex < silhouettes.length; aIndex += 1) {
+    for (let bIndex = aIndex + 1; bIndex < silhouettes.length; bIndex += 1) {
+      const closest = closestPathPoints(silhouettes[aIndex].points, silhouettes[bIndex].points);
+      if (closest && closest.distance <= touchingDistance) {
+        unite(aIndex, bIndex);
+      }
+    }
+  }
+
+  const groups = new Map();
+  silhouettes.forEach((silhouette, index) => {
+    const root = find(index);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root).push(silhouette);
+  });
+
+  return [...groups.values()];
+}
+
+function closestGroupPair(groups) {
+  let best = null;
+
+  for (let aIndex = 0; aIndex < groups.length; aIndex += 1) {
+    for (let bIndex = aIndex + 1; bIndex < groups.length; bIndex += 1) {
+      const aGroup = groups[aIndex];
+      const bGroup = groups[bIndex];
+      const aArea = groupArea(aGroup);
+      const bArea = groupArea(bGroup);
+
+      for (const a of aGroup) {
+        for (const b of bGroup) {
+          const closest = closestPathPoints(a.points, b.points);
+          if (!closest || closest.distance <= 0) continue;
+          if (!best || closest.distance < best.distance) {
+            best = {
+              aGroup,
+              bGroup,
+              aArea,
+              bArea,
+              aPoint: closest.a,
+              bPoint: closest.b,
+              distance: closest.distance
+            };
+          }
+        }
+      }
+    }
+  }
+
+  return best;
+}
+
+function groupArea(group) {
+  return group.reduce((total, silhouette) => total + Math.max(1, silhouette.area), 0);
+}
+
+function translateSilhouetteGroup(group, dx, dy) {
+  group.forEach((silhouette) => translateSilhouette(silhouette, dx, dy));
+}
+
 function closestPathPoints(aPoints, bPoints) {
   let closest = null;
 
@@ -1531,7 +1649,18 @@ function assignVolumeStyles(silhouettes) {
     silhouette.z = (silhouette.volumeStyle.zOffset ?? 0) + index * 0.035;
   });
 
+  settleSilhouetteDepths(silhouettes);
   return silhouettes;
+}
+
+function settleSilhouetteDepths(silhouettes) {
+  if (silhouettes.length < 2) return;
+
+  const meanZ = silhouettes.reduce((total, silhouette) => total + silhouette.z, 0) / silhouettes.length;
+  silhouettes.forEach((silhouette, index) => {
+    const seed = shapeSeed(silhouette, index + 307);
+    silhouette.z = meanZ + (silhouette.z - meanZ) * 0.16 + (seed - 0.5) * 0.035;
+  });
 }
 
 function assignSurfaceStyles(silhouettes) {
