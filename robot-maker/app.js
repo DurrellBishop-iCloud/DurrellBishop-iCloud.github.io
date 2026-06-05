@@ -19,6 +19,8 @@ const ROBOT_PALETTE = [
   ROBOT_COLORS.grey
 ];
 
+const textureCache = new Map();
+
 const els = {
   video: document.querySelector("#cameraVideo"),
   robotCanvas: document.querySelector("#robotCanvas"),
@@ -139,7 +141,7 @@ function initScene() {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.06;
+  renderer.toneMappingExposure = 1.16;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
 
@@ -157,11 +159,11 @@ function initScene() {
   controls.minDistance = 3.4;
   controls.maxDistance = 12;
 
-  const hemi = new THREE.HemisphereLight(0xffffff, 0x8a867b, 1.8);
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x8a867b, 1.25);
   scene.add(hemi);
 
-  const key = new THREE.DirectionalLight(0xffffff, 2.8);
-  key.position.set(3.5, 5.5, 6);
+  const key = new THREE.DirectionalLight(0xffffff, 3.2);
+  key.position.set(3.2, 5.8, 5.5);
   key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.camera.near = 1;
@@ -174,9 +176,17 @@ function initScene() {
   key.shadow.normalBias = 0.035;
   scene.add(key);
 
-  const side = new THREE.DirectionalLight(0xfff4dd, 1.15);
-  side.position.set(-4.5, 2.2, -5.5);
-  scene.add(side);
+  const fill = new THREE.DirectionalLight(0xdceaff, 1.05);
+  fill.position.set(-4.8, 2.4, 4.5);
+  scene.add(fill);
+
+  const rim = new THREE.DirectionalLight(0xfff4dd, 1.65);
+  rim.position.set(-5, 3.2, -6);
+  scene.add(rim);
+
+  const gloss = new THREE.PointLight(0xffffff, 1.05, 10);
+  gloss.position.set(0.8, 2.6, 3.2);
+  scene.add(gloss);
 
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(14, 10),
@@ -1058,20 +1068,23 @@ function assignSurfaceStyles(silhouettes) {
     const seed = shapeSeed(silhouette, index + 53);
     const bounds = pathBounds(silhouette.points);
     const aspect = bounds.width / Math.max(0.001, bounds.height);
-    const styleIndex = Math.floor(seed * 1000 + index * 7) % 6;
-    let pattern = "solid";
+    const styleIndex = (index + Math.floor(seed * 10)) % 7;
+    let pattern = ["solid", "stripes", "facePaint", "splitPaint", "patchPaint", "specklePaint", "sideBand"][styleIndex];
 
-    if (styleIndex === 1 || (aspect > 2.1 && seed > 0.32)) {
-      pattern = "stripes";
-    } else if (styleIndex === 2 || silhouette.volumeStyle?.kind === "facetedBlock") {
-      pattern = "facePaint";
-    } else if (styleIndex === 3 || silhouette.holes.length > 0) {
-      pattern = "splitPaint";
-    } else if (styleIndex === 4 && silhouette.volumeStyle?.kind !== "flatBlade") {
-      pattern = "patchPaint";
+    if (aspect > 2.1 && seed > 0.28) {
+      pattern = seed > 0.68 ? "sideBand" : "stripes";
+    } else if (silhouette.holes.length > 0) {
+      pattern = seed > 0.55 ? "splitPaint" : "facePaint";
+    } else if (silhouette.volumeStyle?.builder === "boxPrism") {
+      pattern = seed > 0.48 ? "facePaint" : "splitPaint";
+    } else if (silhouette.volumeStyle?.builder === "ellipsoid" && seed > 0.42) {
+      pattern = "specklePaint";
     }
 
-    const finish = seed > 0.56 || silhouette.volumeStyle?.smooth ? "glossy" : "matte";
+    const finishes = ["matte", "glossy", "textured", "satin", "rubber"];
+    let finish = finishes[(index + Math.floor(seed * finishes.length)) % finishes.length];
+    if (silhouette.volumeStyle?.smooth && seed > 0.28) finish = "glossy";
+    if (pattern === "specklePaint") finish = "textured";
     const accents = pickAccentColors(silhouette.color, seed, 4);
 
     silhouette.surfaceStyle = {
@@ -1082,9 +1095,10 @@ function assignSurfaceStyles(silhouettes) {
       splitAngle: seed * Math.PI * 2,
       splitOffset: (seed - 0.5) * 0.55,
       stripeAxis: aspect > 1.6 ? "x" : "y",
-      stripeScale: 4.2 + seed * 5.6,
+      stripeScale: 3.4 + seed * 7.4,
       stripeOffset: seed * 3.7,
-      patchScale: 1.2 + seed * 1.8
+      patchScale: 1.2 + seed * 1.8,
+      textureSeed: seed
     };
   });
 
@@ -1114,6 +1128,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "ringTube":
       return {
         kind,
+        builder: "outlineLoft",
         depth: clamp(maxSize * (0.42 + seed * 0.46), 0.46, 1.8),
         smooth: true,
         sideShade: 0.9,
@@ -1122,6 +1137,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "roundedSlot":
       return {
         kind,
+        builder: "outlineLoft",
         depth: clamp(minSize * (0.9 + seed * 1.15), 0.34, 1.35),
         smooth: true,
         axis,
@@ -1131,6 +1147,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "spheroid":
       return {
         kind,
+        builder: "ellipsoid",
         depth: clamp(maxSize * (0.7 + seed * 0.72), 0.62, 2.3),
         smooth: true,
         sideShade: 0.92,
@@ -1139,6 +1156,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "oneSidedDome":
       return {
         kind,
+        builder: "ellipsoid",
         depth: clamp(maxSize * (0.5 + seed * 0.68), 0.42, 1.65),
         smooth: true,
         sideShade: 0.9,
@@ -1148,6 +1166,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "roundedColumn":
       return {
         kind,
+        builder: "ellipsoid",
         depth: sizeDepth(0.82, 0.34, 1.5),
         smooth: true,
         axis,
@@ -1157,6 +1176,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "curvedRibbon":
       return {
         kind,
+        builder: "outlineLoft",
         depth: sizeDepth(1.1, 0.32, 1.35),
         smooth: true,
         axis,
@@ -1166,6 +1186,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "flatBlade":
       return {
         kind,
+        builder: "outlineLoft",
         depth: sizeDepth(0.08, 0.06, 0.18),
         smooth: false,
         sideShade: 0.7,
@@ -1174,6 +1195,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "flatFoot":
       return {
         kind,
+        builder: "boxPrism",
         depth: sizeDepth(0.16, 0.1, 0.34),
         smooth: false,
         sideShade: 0.72,
@@ -1182,6 +1204,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "wedgeBeam":
       return {
         kind,
+        builder: "wedgePrism",
         depth: sizeDepth(0.82, 0.34, 1.4),
         smooth: false,
         axis,
@@ -1191,6 +1214,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "sharpColumn":
       return {
         kind,
+        builder: "boxPrism",
         depth: sizeDepth(0.68, 0.28, 1.25),
         smooth: false,
         sideShade: 0.78,
@@ -1199,6 +1223,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "piercedBlock":
       return {
         kind,
+        builder: "outlineLoft",
         depth: sizeDepth(0.62, 0.32, 1.35),
         smooth: false,
         sideShade: 0.78,
@@ -1207,6 +1232,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "piercedTaper":
       return {
         kind,
+        builder: "outlineLoft",
         depth: sizeDepth(0.82, 0.38, 1.5),
         smooth: false,
         sideShade: 0.78,
@@ -1215,6 +1241,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "oneSidedTaper":
       return {
         kind,
+        builder: "outlineLoft",
         depth: sizeDepth(0.88, 0.34, 1.55),
         smooth: false,
         sideShade: 0.78,
@@ -1223,6 +1250,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     case "facetedBlock":
       return {
         kind,
+        builder: "boxPrism",
         depth: sizeDepth(0.72, 0.34, 1.35),
         smooth: false,
         sideShade: 0.78,
@@ -1232,6 +1260,7 @@ function volumeStyleForKind(kind, silhouette, metrics) {
     default:
       return {
         kind: "straightExtrusion",
+        builder: seed > 0.52 ? "boxPrism" : "outlineLoft",
         depth: sizeDepth(0.38, 0.14, 1.05),
         smooth: false,
         sideShade: 0.74,
@@ -1255,6 +1284,32 @@ function isDarkColor(color = ROBOT_COLORS.white) {
 }
 
 function createDynamicSilhouetteGeometry(silhouette) {
+  const geometry = createGeometryForPart(silhouette);
+  const paintedGeometry = paintGeometrySurfaces(geometry, silhouette);
+  paintedGeometry.userData.profile = geometry.userData.profile ?? {};
+  paintedGeometry.computeVertexNormals();
+  return paintedGeometry;
+}
+
+function createGeometryForPart(silhouette) {
+  const builder = silhouette.volumeStyle?.builder ?? "outlineLoft";
+
+  if (builder === "ellipsoid" && silhouette.holes.length === 0) {
+    return createEllipsoidGeometry(silhouette);
+  }
+
+  if (builder === "boxPrism" && silhouette.holes.length === 0) {
+    return createBoxPrismGeometry(silhouette, false);
+  }
+
+  if (builder === "wedgePrism" && silhouette.holes.length === 0) {
+    return createBoxPrismGeometry(silhouette, true);
+  }
+
+  return createOutlineLoftGeometry(silhouette);
+}
+
+function createOutlineLoftGeometry(silhouette) {
   const contour = ensureClockwise(silhouette.points).map((point) => new THREE.Vector2(point.x, point.y));
   const holes = silhouette.holes.map((hole) => ensureCounterClockwise(hole).map((point) => new THREE.Vector2(point.x, point.y)));
   const rings = [contour, ...holes];
@@ -1328,10 +1383,86 @@ function createDynamicSilhouetteGeometry(silhouette) {
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.userData.profile = profile;
-  const paintedGeometry = paintGeometrySurfaces(geometry, silhouette);
-  paintedGeometry.userData.profile = profile;
-  paintedGeometry.computeVertexNormals();
-  return paintedGeometry;
+  return geometry;
+}
+
+function createEllipsoidGeometry(silhouette) {
+  const bounds = pathBounds(silhouette.points);
+  const center = pathCentroid(silhouette.points);
+  const profile = volumeProfileForSilhouette(silhouette);
+  let width = Math.max(bounds.width, 0.08);
+  let height = Math.max(bounds.height, 0.08);
+  let depth = Math.max(silhouette.depth, 0.08);
+  const geometry = new THREE.SphereGeometry(0.5, 24, 14);
+
+  if (silhouette.volumeStyle?.kind === "roundedBeam" || silhouette.volumeStyle?.kind === "roundedColumn") {
+    const axis = silhouette.volumeStyle.axis ?? (width > height ? "horizontal" : "vertical");
+    const squash = axis === "horizontal"
+      ? { x: 1.08, y: 0.74, z: 0.9 }
+      : { x: 0.74, y: 1.08, z: 0.9 };
+    width *= squash.x;
+    height *= squash.y;
+    depth *= squash.z;
+  }
+
+  geometry.scale(width, height, depth);
+  geometry.translate(center.x, center.y, silhouette.z);
+
+  geometry.userData.profile = {
+    ...profile,
+    smooth: true,
+    primitive: "ellipsoid"
+  };
+  return geometry;
+}
+
+function createBoxPrismGeometry(silhouette, wedge = false) {
+  const bounds = pathBounds(silhouette.points);
+  const center = pathCentroid(silhouette.points);
+  const profile = volumeProfileForSilhouette(silhouette);
+  const width = Math.max(bounds.width, 0.08);
+  const height = Math.max(bounds.height, 0.08);
+  const depth = Math.max(silhouette.depth, 0.08);
+  const seed = shapeSeed(silhouette, wedge ? 211 : 173);
+  const backScale = wedge ? 0.88 + seed * 0.12 : 1;
+  const frontScale = wedge ? 0.52 + seed * 0.24 : 0.9 + seed * 0.16;
+  const skewX = wedge ? (seed - 0.5) * width * 0.18 : (seed - 0.5) * width * 0.05;
+  const skewY = wedge ? (seed - 0.5) * height * 0.14 : (seed - 0.5) * height * 0.04;
+  const zBack = silhouette.z - depth / 2;
+  const zFront = silhouette.z + depth / 2;
+  const positions = [];
+  const indices = [
+    0, 2, 1, 1, 2, 3,
+    4, 5, 6, 5, 7, 6,
+    0, 1, 4, 1, 5, 4,
+    1, 3, 5, 3, 7, 5,
+    3, 2, 7, 2, 6, 7,
+    2, 0, 6, 0, 4, 6
+  ];
+
+  [
+    { z: zBack, scale: backScale, x: -skewX, y: -skewY },
+    { z: zFront, scale: frontScale, x: skewX, y: skewY }
+  ].forEach((layer) => {
+    const hw = (width * layer.scale) / 2;
+    const hh = (height * layer.scale) / 2;
+    positions.push(
+      center.x - hw + layer.x, center.y - hh + layer.y, layer.z,
+      center.x + hw + layer.x, center.y - hh + layer.y, layer.z,
+      center.x - hw + layer.x, center.y + hh + layer.y, layer.z,
+      center.x + hw + layer.x, center.y + hh + layer.y, layer.z
+    );
+  });
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setIndex(indices);
+  geometry.userData.profile = {
+    ...profile,
+    smooth: false,
+    primitive: wedge ? "wedgePrism" : "boxPrism"
+  };
+  return geometry;
 }
 
 function paintGeometrySurfaces(indexedGeometry, silhouette) {
@@ -1345,10 +1476,12 @@ function paintGeometrySurfaces(indexedGeometry, silhouette) {
     accentColors: pickAccentColors(silhouette.color ?? ROBOT_COLORS.white, 0.5, 4)
   };
 
-  for (let i = 0; i < index.count; i += 3) {
-    const a = vertexFromAttribute(position, index.getX(i));
-    const b = vertexFromAttribute(position, index.getX(i + 1));
-    const c = vertexFromAttribute(position, index.getX(i + 2));
+  const count = index ? index.count : position.count;
+
+  for (let i = 0; i < count; i += 3) {
+    const a = vertexFromAttribute(position, index ? index.getX(i) : i);
+    const b = vertexFromAttribute(position, index ? index.getX(i + 1) : i + 1);
+    const c = vertexFromAttribute(position, index ? index.getX(i + 2) : i + 2);
     const centroid = {
       x: (a.x + b.x + c.x) / 3,
       y: (a.y + b.y + c.y) / 3,
@@ -1416,6 +1549,14 @@ function colorForSurfaceTriangle(style, centroid, normal, faceIndex) {
   } else if (style.pattern === "patchPaint") {
     const patch = Math.floor((centroid.x * 1.7 + centroid.y * 2.3 + centroid.z * 1.1) * style.patchScale + faceIndex * 0.17);
     color = [base, ...accents][Math.abs(patch) % (accents.length + 1)];
+  } else if (style.pattern === "specklePaint") {
+    const noise = surfaceNoise(centroid.x, centroid.y, centroid.z, style.textureSeed);
+    color = noise > 0.68 ? mixColor(base, accents[0], 0.48) : base;
+    if (noise < 0.16) color = mixColor(color, colorObject(ROBOT_COLORS.white), 0.28);
+  } else if (style.pattern === "sideBand") {
+    const side = Math.abs(normal.z) < 0.42;
+    const stripe = Math.floor((centroid.y + style.stripeOffset) * style.stripeScale);
+    color = side && stripe % 2 === 0 ? accents[0] : base;
   }
 
   if (Math.abs(normal.z) < 0.18) {
@@ -1423,6 +1564,11 @@ function colorForSurfaceTriangle(style, centroid, normal, faceIndex) {
   }
 
   return color;
+}
+
+function surfaceNoise(x, y, z, seed = 0) {
+  const raw = Math.sin(x * 42.13 + y * 89.91 + z * 27.37 + seed * 311.7) * 43758.5453;
+  return raw - Math.floor(raw);
 }
 
 function colorObject(color) {
@@ -1440,6 +1586,103 @@ function mixColor(a, b, amount) {
     g: a.g * (1 - amount) + b.g * amount,
     b: a.b * (1 - amount) + b.b * amount
   };
+}
+
+function createMaterialForSilhouette(silhouette, profile) {
+  const finish = silhouette.surfaceStyle?.finish ?? "matte";
+  const common = {
+    color: 0xffffff,
+    flatShading: !profile.smooth,
+    vertexColors: true,
+    side: THREE.DoubleSide
+  };
+
+  if (finish === "glossy") {
+    return new THREE.MeshPhysicalMaterial({
+      ...common,
+      roughness: 0.16,
+      metalness: 0.02,
+      clearcoat: 0.86,
+      clearcoatRoughness: 0.12
+    });
+  }
+
+  if (finish === "satin") {
+    return new THREE.MeshPhysicalMaterial({
+      ...common,
+      roughness: 0.42,
+      metalness: 0,
+      clearcoat: 0.32,
+      clearcoatRoughness: 0.48
+    });
+  }
+
+  if (finish === "rubber") {
+    return new THREE.MeshPhysicalMaterial({
+      ...common,
+      roughness: 0.94,
+      metalness: 0,
+      clearcoat: 0,
+      sheen: 0.22,
+      sheenRoughness: 0.9,
+      sheenColor: new THREE.Color(0xffffff)
+    });
+  }
+
+  if (finish === "textured") {
+    const texture = proceduralTexture("grain", silhouette.surfaceStyle?.textureSeed ?? 0);
+    return new THREE.MeshPhysicalMaterial({
+      ...common,
+      roughness: 0.88,
+      metalness: 0,
+      clearcoat: 0.08,
+      clearcoatRoughness: 0.9,
+      bumpMap: texture,
+      bumpScale: 0.035,
+      roughnessMap: texture
+    });
+  }
+
+  return new THREE.MeshPhysicalMaterial({
+    ...common,
+    roughness: profile.smooth ? 0.64 : 0.86,
+    metalness: 0,
+    clearcoat: 0,
+    clearcoatRoughness: 0.84
+  });
+}
+
+function proceduralTexture(kind, seed) {
+  const key = `${kind}-${Math.round(seed * 1000)}`;
+  if (textureCache.has(key)) return textureCache.get(key);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  const image = ctx.createImageData(canvas.width, canvas.height);
+
+  for (let y = 0; y < canvas.height; y += 1) {
+    for (let x = 0; x < canvas.width; x += 1) {
+      const i = (y * canvas.width + x) * 4;
+      const noise = surfaceNoise(x * 0.12, y * 0.12, seed, seed);
+      const stripe = Math.sin((x + seed * 31) * 0.55) * 0.5 + 0.5;
+      const value = Math.round(150 + noise * 72 + stripe * 28);
+      image.data[i] = value;
+      image.data[i + 1] = value;
+      image.data[i + 2] = value;
+      image.data[i + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(image, 0, 0);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(2.5, 2.5);
+  texture.colorSpace = THREE.NoColorSpace;
+  textureCache.set(key, texture);
+  return texture;
 }
 
 function volumeProfileForSilhouette(silhouette) {
@@ -1570,17 +1813,7 @@ function rebuildScene(silhouettes) {
     const geometry = createDynamicSilhouetteGeometry(silhouette);
     const profile = geometry.userData.profile ?? {};
 
-    const finish = silhouette.surfaceStyle?.finish ?? "matte";
-    const material = new THREE.MeshPhysicalMaterial({
-      color: 0xffffff,
-      roughness: finish === "glossy" ? 0.18 : (profile.smooth ? 0.64 : 0.86),
-      metalness: finish === "glossy" ? 0.03 : 0,
-      clearcoat: finish === "glossy" ? 0.72 : 0,
-      clearcoatRoughness: finish === "glossy" ? 0.16 : 0.84,
-      flatShading: !profile.smooth,
-      vertexColors: true,
-      side: THREE.DoubleSide
-    });
+    const material = createMaterialForSilhouette(silhouette, profile);
     const mesh = new THREE.Mesh(geometry, material);
     mesh.castShadow = true;
     mesh.receiveShadow = false;

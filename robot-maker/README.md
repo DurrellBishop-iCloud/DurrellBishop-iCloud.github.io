@@ -33,8 +33,9 @@ The app is static. Publish the folder with GitHub Pages from the repository root
 - Overlapping/touching white parts become visible merged silhouettes.
 - Colored robot palette inspired by the reference robots.
 - Shape grammar that mixes straight extrusions, very thin plates, deep blocks, one-sided tapers, curved ribbons, spheroids, and tube-like rings.
+- Separate geometry builders for outline lofts, ellipsoid/turned bodies, box prisms, and wedge prisms.
 - Mostly sharp-edged robot parts, with rounded volumes only when the silhouette suggests a curved object.
 - Lit mesh rendering without the drawn black edge-line overlay.
-- Per-part material treatment: matte or glossy, striped bands, face-by-face color, and arbitrary split-color patches.
+- Per-part material treatment: matte, glossy, satin, rubbery, or textured, with striped bands, face-by-face color, and arbitrary split-color patches.
 
 For desktop testing without a camera, open `http://localhost:4173/?test`.
