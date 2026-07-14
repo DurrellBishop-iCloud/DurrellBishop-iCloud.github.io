@@ -20,7 +20,7 @@
   .on{color:#0a7}.off{color:#c33}
 </style></head><body>
 <h2>Print</h2>
-<div class="ver">v1.1.1 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+<div class="ver">v1.2.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
 
 <div class="card">
   <b>Text</b><br><br>
@@ -129,9 +129,10 @@ function printDrawing(){
   for(let y=0;y<384;y++)for(let x=0;x<384;x++)
     if(img[(y*384+x)*4]<128){lastRow=y;break;}
   const rows=lastRow+1;
+  // packed rotated 180 so it comes out of the slot the same way up as drawn
   const bytes=new Uint8Array(rows*48);
   for(let y=0;y<rows;y++)for(let x=0;x<384;x++)
-    if(img[(y*384+x)*4]<128)bytes[y*48+(x>>3)]|=0x80>>(x&7);
+    if(img[((rows-1-y)*384+(383-x))*4]<128)bytes[y*48+(x>>3)]|=0x80>>(x&7);
   if(!ws||ws.readyState!==1){setStatus('Not connected');return;}
   const CHUNK=96*48;
   const total=Math.ceil(bytes.length/CHUNK);
