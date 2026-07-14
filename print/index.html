@@ -1,0 +1,123 @@
+<!DOCTYPE html><html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Print</title>
+<style>
+  body{font-family:-apple-system,Helvetica,Arial,sans-serif;max-width:440px;
+       margin:0 auto;padding:14px;background:#f2f2f2}
+  h2{margin:6px 0 2px} .ver{color:#888;font-size:12px;margin-bottom:12px}
+  .card{background:#fff;border-radius:10px;padding:12px;margin-bottom:14px;
+        box-shadow:0 1px 3px rgba(0,0,0,.15)}
+  textarea{width:100%;height:90px;font-size:16px;box-sizing:border-box}
+  canvas{width:100%;touch-action:none;border:1px solid #ccc;border-radius:4px;
+         background:#fff;display:block}
+  button{font-size:15px;padding:8px 14px;margin:6px 6px 0 0;border:none;
+         border-radius:6px;background:#333;color:#fff}
+  button:disabled{background:#ccc}
+  button.sec{background:#999}
+  select{font-size:15px;padding:6px}
+  #status{min-height:18px;font-size:14px}
+  .on{color:#0a7}.off{color:#c33}
+</style></head><body>
+<h2>Print</h2>
+<div class="ver">v1.0.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+
+<div class="card">
+  <b>Text</b><br><br>
+  <textarea id="txt" placeholder="Type something to print..."></textarea><br>
+  Size: <select id="size">
+    <option value="0">Normal</option>
+    <option value="16">Tall</option>
+    <option value="17">Big</option>
+  </select>
+  <button id="btnText" onclick="printText()" disabled>Print text</button>
+</div>
+
+<div class="card">
+  <b>Drawing</b><br><br>
+  <canvas id="cv" width="384" height="384"></canvas>
+  Pen: <select id="pen">
+    <option value="3">Thin</option>
+    <option value="6" selected>Medium</option>
+    <option value="12">Fat</option>
+    <option value="24">Eraser</option>
+  </select>
+  <button class="sec" onclick="clearCv()">Clear</button>
+  <button id="btnDraw" onclick="printDrawing()" disabled>Print drawing</button>
+</div>
+
+<div class="card">
+  <button id="btnFeed" class="sec" onclick="send({type:'feed'})" disabled>Feed paper</button>
+  <div id="status"></div>
+</div>
+
+<script>
+const RELAY='wss://printer-relay.dbgh.workers.dev';
+const printerId=new URLSearchParams(location.search).get('printer')||'durrell-printer-01';
+document.getElementById('pname').textContent=printerId+' ';
+
+// --- canvas drawing (same as the local page) ---
+const cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+function clearCv(){ctx.fillStyle='#fff';ctx.fillRect(0,0,384,384);}
+clearCv();
+let drawing=false,last=null;
+function pos(e){const r=cv.getBoundingClientRect();
+  return {x:(e.clientX-r.left)*384/r.width,y:(e.clientY-r.top)*384/r.height};}
+cv.addEventListener('pointerdown',e=>{drawing=true;last=pos(e);dot(last);e.preventDefault();});
+cv.addEventListener('pointermove',e=>{if(!drawing)return;const p=pos(e);
+  const pen=+document.getElementById('pen').value;
+  ctx.strokeStyle=pen==24?'#fff':'#000';ctx.lineWidth=pen;ctx.lineCap='round';
+  ctx.beginPath();ctx.moveTo(last.x,last.y);ctx.lineTo(p.x,p.y);ctx.stroke();
+  last=p;e.preventDefault();});
+window.addEventListener('pointerup',()=>drawing=false);
+function dot(p){const pen=+document.getElementById('pen').value;
+  ctx.fillStyle=pen==24?'#fff':'#000';
+  ctx.beginPath();ctx.arc(p.x,p.y,pen/2,0,7);ctx.fill();}
+
+// --- relay connection with reconnect ---
+let ws=null,online=false;
+function setStatus(s){document.getElementById('status').textContent=s;}
+function setOnline(on){
+  online=on;
+  const c=document.getElementById('conn');
+  c.textContent=on?'printer online':'printer offline';
+  c.className=on?'on':'off';
+  for(const id of ['btnText','btnDraw','btnFeed'])
+    document.getElementById(id).disabled=!on;
+}
+function connect(){
+  ws=new WebSocket(RELAY+'/browser/'+printerId);
+  ws.onmessage=e=>{
+    let m;try{m=JSON.parse(e.data);}catch{return;}
+    if(m.type==='status')setOnline(m.online);
+    if(m.type==='sent')setStatus('Sent to printer...');
+    if(m.type==='printed')setStatus('Printed!');
+    if(m.type==='error')setStatus('Error: '+m.error);
+  };
+  ws.onclose=()=>{setOnline(false);setTimeout(connect,3000);};
+  ws.onerror=()=>ws.close();
+}
+connect();
+function send(msg){
+  if(!ws||ws.readyState!==1){setStatus('Not connected');return;}
+  ws.send(JSON.stringify(msg));setStatus('Sending...');
+}
+function printText(){
+  const t=document.getElementById('txt').value;
+  if(!t.trim()){setStatus('Nothing to print');return;}
+  send({type:'print',text:t,size:+document.getElementById('size').value});
+}
+function printDrawing(){
+  const img=ctx.getImageData(0,0,384,384).data;
+  let lastRow=0;
+  for(let y=0;y<384;y++)for(let x=0;x<384;x++)
+    if(img[(y*384+x)*4]<128){lastRow=y;break;}
+  const rows=lastRow+1;
+  const bytes=new Uint8Array(rows*48);
+  for(let y=0;y<rows;y++)for(let x=0;x<384;x++)
+    if(img[(y*384+x)*4]<128)bytes[y*48+(x>>3)]|=0x80>>(x&7);
+  let bin='';for(let i=0;i<bytes.length;i+=1024)
+    bin+=String.fromCharCode(...bytes.subarray(i,i+1024));
+  send({type:'image',data:btoa(bin)});
+}
+</script></body></html>
