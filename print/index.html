@@ -20,7 +20,7 @@
   .on{color:#0a7}.off{color:#c33}
 </style></head><body>
 <h2>Print</h2>
-<div class="ver">v1.2.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+<div class="ver">v1.3.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
 
 <div class="card">
   <b>Text</b><br><br>
@@ -44,6 +44,12 @@
   </select>
   <button class="sec" onclick="clearCv()">Clear</button>
   <button id="btnDraw" onclick="printDrawing()" disabled>Print drawing</button>
+</div>
+
+<div class="card">
+  <b>Camera</b> <span style="font-size:12px;color:#888">(printer takes a photo, AI turns it into a drawing)</span><br><br>
+  <button id="btnSnap" onclick="send({type:'snap'})" disabled>Photo &rarr; AI drawing</button>
+  <img id="preview" style="display:none;width:100%;margin-top:8px;border:1px solid #ccc;border-radius:4px">
 </div>
 
 <div class="card">
@@ -82,7 +88,7 @@ function setOnline(on){
   const c=document.getElementById('conn');
   c.textContent=on?'printer online':'printer offline';
   c.className=on?'on':'off';
-  for(const id of ['btnText','btnDraw','btnFeed'])
+  for(const id of ['btnText','btnDraw','btnFeed','btnSnap'])
     document.getElementById(id).disabled=!on;
 }
 function connect(){
@@ -93,6 +99,11 @@ function connect(){
     if(m.type==='sent'&&!sendQueue.length)setStatus('Sent to printer...');
     if(m.type==='printed'){sendQueue=[];setStatus('Printed!');}
     if(m.type==='chunk_ok')nextChunk();
+    if(m.type==='snap_status')setStatus(m.msg);
+    if(m.type==='preview'){
+      const p=document.getElementById('preview');
+      p.src='data:image/png;base64,'+m.png;p.style.display='block';
+    }
     if(m.type==='error'){sendQueue=[];setStatus('Error: '+m.error);}
   };
   ws.onclose=()=>{setOnline(false);setTimeout(connect,3000);};
