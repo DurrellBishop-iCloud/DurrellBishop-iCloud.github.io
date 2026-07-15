@@ -20,7 +20,7 @@
   .on{color:#0a7}.off{color:#c33}
 </style></head><body>
 <h2>Print</h2>
-<div class="ver">v1.3.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+<div class="ver">v1.4.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
 
 <div class="card">
   <b>Text</b><br><br>
@@ -47,9 +47,12 @@
 </div>
 
 <div class="card">
-  <b>Camera</b> <span style="font-size:12px;color:#888">(printer takes a photo, AI turns it into a drawing)</span><br><br>
-  <button id="btnSnap" onclick="send({type:'snap'})" disabled>Photo &rarr; AI drawing</button>
-  <img id="preview" style="display:none;width:100%;margin-top:8px;border:1px solid #ccc;border-radius:4px">
+  <b>Camera</b> <span style="font-size:12px;color:#888">(countdown, photo, 5s to cancel, then print)</span><br><br>
+  <button id="btnSnap" onclick="snap('draw')" disabled>Photo &rarr; AI drawing</button>
+  <button id="btnSnapD" onclick="snap('direct')" disabled>Photo &rarr; print photo</button>
+  <button id="btnCancel" onclick="send({type:'cancel'});hideCancel()"
+    style="display:none;background:#c33">Cancel print</button>
+  <div id="shots" style="margin-top:8px"></div>
 </div>
 
 <div class="card">
@@ -88,7 +91,7 @@ function setOnline(on){
   const c=document.getElementById('conn');
   c.textContent=on?'printer online':'printer offline';
   c.className=on?'on':'off';
-  for(const id of ['btnText','btnDraw','btnFeed','btnSnap'])
+  for(const id of ['btnText','btnDraw','btnFeed','btnSnap','btnSnapD'])
     document.getElementById(id).disabled=!on;
 }
 function connect(){
@@ -99,11 +102,12 @@ function connect(){
     if(m.type==='sent'&&!sendQueue.length)setStatus('Sent to printer...');
     if(m.type==='printed'){sendQueue=[];setStatus('Printed!');}
     if(m.type==='chunk_ok')nextChunk();
-    if(m.type==='snap_status')setStatus(m.msg);
-    if(m.type==='preview'){
-      const p=document.getElementById('preview');
-      p.src='data:image/png;base64,'+m.png;p.style.display='block';
+    if(m.type==='snap_status'){
+      setStatus(m.msg);
+      if(m.msg.indexOf('tap Cancel')<0)hideCancel();
     }
+    if(m.type==='photo'){addShot('image/jpeg',m.jpg,'photo');showCancel();}
+    if(m.type==='preview')addShot('image/png',m.png,'drawing');
     if(m.type==='error'){sendQueue=[];setStatus('Error: '+m.error);}
   };
   ws.onclose=()=>{setOnline(false);setTimeout(connect,3000);};
@@ -118,6 +122,38 @@ function printText(){
   const t=document.getElementById('txt').value;
   if(!t.trim()){setStatus('Nothing to print');return;}
   send({type:'print',text:t,size:+document.getElementById('size').value});
+}
+
+// --- camera: spoken countdown, then snap; photo arrives with a cancel window ---
+function say(text){
+  try{const u=new SpeechSynthesisUtterance(text);u.rate=1;speechSynthesis.speak(u);}catch(e){}
+}
+function snap(mode){
+  if(!ws||ws.readyState!==1){setStatus('Not connected');return;}
+  say('Say cheese!');
+  let n=3;
+  setStatus('3...');
+  const t=setInterval(()=>{
+    if(n>1){n--;say(String(n+1));setStatus(n+'...');}
+    else{
+      clearInterval(t);say('1... snap!');
+      setStatus('Snap!');
+      send({type:'snap',mode:mode});
+    }
+  },900);
+}
+function showCancel(){document.getElementById('btnCancel').style.display='inline-block';}
+function hideCancel(){document.getElementById('btnCancel').style.display='none';}
+// newest shot first; tap-and-hold (or tap) an image on iPhone to save to Photos
+function addShot(mime,b64data,label){
+  const d=document.createElement('div');
+  d.style.cssText='margin-top:8px';
+  d.innerHTML='<div style="font-size:12px;color:#888">'+label+
+    ' &mdash; press and hold the image to save to Photos</div>'+
+    '<img style="width:100%;border:1px solid #ccc;border-radius:4px" src="data:'+mime+';base64,'+b64data+'">';
+  const shots=document.getElementById('shots');
+  shots.insertBefore(d,shots.firstChild);
+  while(shots.children.length>4)shots.removeChild(shots.lastChild);
 }
 // Drawings are sent as chunks of 96 rows (~6KB each): the ESP32's
 // WebSocket library drops frames bigger than 15KB. Each next chunk goes
