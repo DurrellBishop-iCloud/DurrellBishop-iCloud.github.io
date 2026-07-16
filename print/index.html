@@ -20,7 +20,7 @@
   .on{color:#0a7}.off{color:#c33}
 </style></head><body>
 <h2>Print</h2>
-<div class="ver">v1.5.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+<div class="ver">v1.6.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
 
 <div class="card">
   <b>Text</b><br><br>
@@ -85,7 +85,12 @@ function dot(p){const pen=+document.getElementById('pen').value;
 
 // --- relay connection with reconnect ---
 let ws=null,online=false;
-function setStatus(s){document.getElementById('status').textContent=s;}
+function setStatus(s){
+  const el=document.getElementById('status');
+  el.textContent=s;
+  const bad=/no camera|failed|error|offline|cancelled/i.test(s);
+  el.style.cssText=bad?'color:#c22;font-weight:700;font-size:16px':'';
+}
 function setOnline(on){
   online=on;
   const c=document.getElementById('conn');
