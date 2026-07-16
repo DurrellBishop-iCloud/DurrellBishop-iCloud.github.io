@@ -20,7 +20,7 @@
   .on{color:#0a7}.off{color:#c33}
 </style></head><body>
 <h2>Print</h2>
-<div class="ver">v1.4.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+<div class="ver">v1.5.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
 
 <div class="card">
   <b>Text</b><br><br>
@@ -124,21 +124,44 @@ function printText(){
   send({type:'print',text:t,size:+document.getElementById('size').value});
 }
 
-// --- camera: spoken countdown, then snap; photo arrives with a cancel window ---
+// --- camera: spoken 3..2..1, shutter click, THEN the capture fires ---
 function say(text){
   try{const u=new SpeechSynthesisUtterance(text);u.rate=1;speechSynthesis.speak(u);}catch(e){}
 }
+let audioCtx=null;
+function shutterSound(){
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    // two short filtered noise bursts = mechanical click-clack
+    for(const [t0,dur,f] of [[0,0.02,2600],[0.07,0.035,1400]]){
+      const n=audioCtx.sampleRate*dur,buf=audioCtx.createBuffer(1,n,audioCtx.sampleRate);
+      const d=buf.getChannelData(0);
+      for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*(1-i/n);
+      const src=audioCtx.createBufferSource();src.buffer=buf;
+      const bp=audioCtx.createBiquadFilter();bp.type='bandpass';bp.frequency.value=f;bp.Q.value=1.2;
+      const g=audioCtx.createGain();g.gain.value=0.9;
+      src.connect(bp).connect(g).connect(audioCtx.destination);
+      src.start(audioCtx.currentTime+t0);
+    }
+  }catch(e){}
+}
 function snap(mode){
   if(!ws||ws.readyState!==1){setStatus('Not connected');return;}
-  say('Say cheese!');
+  // unlock audio on the user's tap, silently, so the shutter can play later
+  try{
+    audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    audioCtx.resume&&audioCtx.resume();
+  }catch(e){}
   let n=3;
-  setStatus('3...');
+  say('3');setStatus('3...');
   const t=setInterval(()=>{
-    if(n>1){n--;say(String(n+1));setStatus(n+'...');}
+    n--;
+    if(n>0){say(String(n));setStatus(n+'...');}
     else{
-      clearInterval(t);say('1... snap!');
+      clearInterval(t);
+      shutterSound();               // click-clack...
+      send({type:'snap',mode:mode}); // ...and the camera fires right after it
       setStatus('Snap!');
-      send({type:'snap',mode:mode});
     }
   },900);
 }
