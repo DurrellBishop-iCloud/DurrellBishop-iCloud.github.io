@@ -20,7 +20,7 @@
   .on{color:#0a7}.off{color:#c33}
 </style></head><body>
 <h2>Print</h2>
-<div class="ver">v1.6.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+<div class="ver">v1.7.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
 
 <div class="card">
   <b>Text</b><br><br>
@@ -56,7 +56,9 @@
 </div>
 
 <div class="card">
-  <button id="btnFeed" class="sec" onclick="send({type:'feed'})" disabled>Feed paper</button>
+  <label style="font-size:15px"><input type="checkbox" id="cbDouble"> Double print (one to keep)</label>
+  <button id="btnFeed" class="sec" onclick="send({type:'feed'})" disabled style="float:right">Feed paper</button>
+  <div style="clear:both"></div>
   <div id="status"></div>
 </div>
 
@@ -99,13 +101,18 @@ function setOnline(on){
   for(const id of ['btnText','btnDraw','btnFeed','btnSnap','btnSnapD'])
     document.getElementById(id).disabled=!on;
 }
+let cfg={doublePrint:false};
 function connect(){
   ws=new WebSocket(RELAY+'/browser/'+printerId);
+  ws.onopen=()=>ws.send('{"type":"settings?"}');
   ws.onmessage=e=>{
     let m;try{m=JSON.parse(e.data);}catch{return;}
     if(m.type==='status')setOnline(m.online);
     if(m.type==='sent'&&!sendQueue.length)setStatus('Sent to printer...');
-    if(m.type==='printed'){sendQueue=[];setStatus('Printed!');}
+    if(m.type==='printed'){
+      if(sendQueue.length){setStatus('Printing copy 2...');nextChunk();}
+      else setStatus('Printed!');
+    }
     if(m.type==='chunk_ok')nextChunk();
     if(m.type==='snap_status'){
       setStatus(m.msg);
@@ -113,6 +120,7 @@ function connect(){
     }
     if(m.type==='photo'){addShot('image/jpeg',m.jpg,'photo');showCancel();}
     if(m.type==='preview')addShot('image/png',m.png,'drawing');
+    if(m.type==='settings'){cfg=m;document.getElementById('cbDouble').checked=!!m.doublePrint;}
     if(m.type==='error'){sendQueue=[];setStatus('Error: '+m.error);}
   };
   ws.onclose=()=>{setOnline(false);setTimeout(connect,3000);};
@@ -123,6 +131,9 @@ function send(msg){
   if(!ws||ws.readyState!==1){setStatus('Not connected');return;}
   ws.send(JSON.stringify(msg));setStatus('Sending...');
 }
+document.getElementById('cbDouble').addEventListener('change',e=>{
+  send({type:'set',doublePrint:e.target.checked});
+});
 function printText(){
   const t=document.getElementById('txt').value;
   if(!t.trim()){setStatus('Nothing to print');return;}
@@ -212,11 +223,13 @@ function printDrawing(){
   const CHUNK=96*48;
   const total=Math.ceil(bytes.length/CHUNK);
   sendQueue=[];
-  for(let i=0;i<total;i++){
-    sendQueue.push({n:i+1,of:total,msg:{type:'image',
-      data:b64(bytes.subarray(i*CHUNK,(i+1)*CHUNK)),
-      first:i===0,last:i===total-1}});
-  }
+  const copies=cfg.doublePrint?2:1;
+  for(let c=0;c<copies;c++)
+    for(let i=0;i<total;i++){
+      sendQueue.push({n:c*total+i+1,of:copies*total,msg:{type:'image',
+        data:b64(bytes.subarray(i*CHUNK,(i+1)*CHUNK)),
+        first:i===0,last:i===total-1}});
+    }
   nextChunk();
 }
 </script></body></html>
