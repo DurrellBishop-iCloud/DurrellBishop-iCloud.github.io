@@ -23,7 +23,7 @@
   .tabbar button.act{background:#333}
 </style></head><body>
 <h2>Print</h2>
-<div class="ver">v1.9.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+<div class="ver">v1.10.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
 
 <div class="tabbar">
   <button id="tb-print" class="act" onclick="showTab('print')">Print</button>
@@ -74,18 +74,17 @@
   <div style="font-size:12px;color:#888;margin-top:4px">Applies to drawings and photos,
   from every phone, until switched off. Double-tap the printer's button does 2 copies once.</div>
   <br><b>Drawing style</b> <span style="font-size:12px;color:#888">(always black &amp; white - this sets the flavour)</span><br>
-  <select id="stylePreset" style="width:100%;margin-top:6px" onchange="presetPicked()">
-    <option value="">custom...</option>
-    <option value="bold woodcut-style illustration with confident outlines and minimal detail">Woodcut (original)</option>
-    <option value="playful cartoon with big expressive features and thick clean outlines">Cartoon</option>
-    <option value="manga comic style with dynamic expressive ink outlines">Manga</option>
-    <option value="funny caricature exaggerating the subject's most distinctive features">Caricature</option>
-    <option value="sweet children's picture-book illustration with simple rounded shapes">Children's book</option>
-    <option value="elegant continuous one-line drawing, a single unbroken line">One-line</option>
-  </select>
+  <select id="stylePreset" style="width:100%;margin-top:6px" onchange="presetPicked()"></select>
   <textarea id="styleText" style="height:56px;font-size:14px;margin-top:6px"
-    placeholder="describe the style in your own words..."></textarea>
-  <button onclick="saveStyle()">Set style (becomes the default)</button>
+    placeholder="describe a style in your own words..."></textarea>
+  <button onclick="useStyle()">Use this style</button>
+  <button class="sec" onclick="saveStyleLib()">Save as my style</button>
+  <button class="sec" id="btnDelStyle" onclick="delStyle()" style="display:none">Forget</button>
+  <details style="margin-top:10px">
+    <summary style="font-size:13px;color:#888">Advanced: the fixed rules (rarely change)</summary>
+    <textarea id="baseText" style="height:72px;font-size:13px;margin-top:6px"></textarea>
+    <button class="sec" onclick="send({type:'set',base:document.getElementById('baseText').value});setStatus('Rules saved')">Save rules</button>
+  </details>
 </div>
 </div>
 
@@ -162,11 +161,7 @@ function connect(){
     if(m.type==='settings'){
       cfg=m;
       document.getElementById('cbDouble').checked=!!m.doublePrint;
-      if(m.style){
-        document.getElementById('styleText').value=m.style;
-        const sel=document.getElementById('stylePreset');
-        sel.value=[...sel.options].some(o=>o.value===m.style)?m.style:'';
-      }
+      rebuildStyles(m);
     }
     if(m.type==='error'){sendQueue=[];setStatus('Error: '+m.error);}
   };
@@ -181,15 +176,58 @@ function send(msg){
 document.getElementById('cbDouble').addEventListener('change',e=>{
   send({type:'set',doublePrint:e.target.checked});
 });
+const PRESETS=[
+  ['Woodcut (original)','bold woodcut-style illustration with confident outlines and minimal detail'],
+  ['Cartoon','playful cartoon with big expressive features and thick clean outlines'],
+  ['Manga','manga comic style with dynamic expressive ink outlines'],
+  ['Caricature',"funny caricature exaggerating the subject's most distinctive features"],
+  ["Children's book",'sweet children\'s picture-book illustration with simple rounded shapes'],
+  ['One-line','elegant continuous one-line drawing, a single unbroken line']];
+function rebuildStyles(m){
+  const sel=document.getElementById('stylePreset');
+  let h='<option value="">custom...</option><optgroup label="Presets">';
+  for(const [n,v] of PRESETS)h+='<option value="'+v.replace(/"/g,'&quot;')+'">'+n+'</option>';
+  h+='</optgroup>';
+  if((m.styles||[]).length){
+    h+='<optgroup label="My styles">';
+    for(const v of m.styles)h+='<option value="'+v.replace(/"/g,'&quot;')+'">'+
+      (v.length>42?v.slice(0,40)+'...':v)+'</option>';
+    h+='</optgroup>';
+  }
+  sel.innerHTML=h;
+  if(m.style){
+    document.getElementById('styleText').value=m.style;
+    sel.value=[...sel.options].some(o=>o.value===m.style)?m.style:'';
+  }
+  if(m.base)document.getElementById('baseText').value=m.base;
+  updateDelBtn(m);
+}
+function updateDelBtn(m){
+  const cur=document.getElementById('styleText').value.trim();
+  document.getElementById('btnDelStyle').style.display=
+    (m.styles||[]).includes(cur)?'inline-block':'none';
+}
 function presetPicked(){
   const v=document.getElementById('stylePreset').value;
   if(v)document.getElementById('styleText').value=v;
+  updateDelBtn(cfg);
 }
-function saveStyle(){
+function useStyle(){
   const v=document.getElementById('styleText').value.trim();
   if(!v){setStatus('Describe a style first');return;}
   send({type:'set',style:v});
-  setStatus('Style saved - next AI drawings will use it');
+  setStatus('Style set - it is now the default');
+}
+function saveStyleLib(){
+  const v=document.getElementById('styleText').value.trim();
+  if(!v){setStatus('Describe a style first');return;}
+  send({type:'set',styleAdd:v,style:v});
+  setStatus('Saved to My styles and set as default');
+}
+function delStyle(){
+  const v=document.getElementById('styleText').value.trim();
+  send({type:'set',styleDel:v});
+  setStatus('Forgotten');
 }
 function printText(){
   const t=document.getElementById('txt').value;
