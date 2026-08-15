@@ -23,7 +23,7 @@
   .tabbar button.act{background:#333}
 </style></head><body>
 <h2>Print</h2>
-<div class="ver">v1.8.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+<div class="ver">v1.9.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
 
 <div class="tabbar">
   <button id="tb-print" class="act" onclick="showTab('print')">Print</button>
@@ -73,6 +73,19 @@
   <label style="font-size:15px"><input type="checkbox" id="cbDouble"> Double print (one to keep)</label>
   <div style="font-size:12px;color:#888;margin-top:4px">Applies to drawings and photos,
   from every phone, until switched off. Double-tap the printer's button does 2 copies once.</div>
+  <br><b>Drawing style</b> <span style="font-size:12px;color:#888">(always black &amp; white - this sets the flavour)</span><br>
+  <select id="stylePreset" style="width:100%;margin-top:6px" onchange="presetPicked()">
+    <option value="">custom...</option>
+    <option value="bold woodcut-style illustration with confident outlines and minimal detail">Woodcut (original)</option>
+    <option value="playful cartoon with big expressive features and thick clean outlines">Cartoon</option>
+    <option value="manga comic style with dynamic expressive ink outlines">Manga</option>
+    <option value="funny caricature exaggerating the subject's most distinctive features">Caricature</option>
+    <option value="sweet children's picture-book illustration with simple rounded shapes">Children's book</option>
+    <option value="elegant continuous one-line drawing, a single unbroken line">One-line</option>
+  </select>
+  <textarea id="styleText" style="height:56px;font-size:14px;margin-top:6px"
+    placeholder="describe the style in your own words..."></textarea>
+  <button onclick="saveStyle()">Set style (becomes the default)</button>
 </div>
 </div>
 
@@ -146,7 +159,15 @@ function connect(){
     }
     if(m.type==='photo'){addShot('image/jpeg',m.jpg,'photo');showCancel();}
     if(m.type==='preview')addShot('image/png',m.png,'drawing');
-    if(m.type==='settings'){cfg=m;document.getElementById('cbDouble').checked=!!m.doublePrint;}
+    if(m.type==='settings'){
+      cfg=m;
+      document.getElementById('cbDouble').checked=!!m.doublePrint;
+      if(m.style){
+        document.getElementById('styleText').value=m.style;
+        const sel=document.getElementById('stylePreset');
+        sel.value=[...sel.options].some(o=>o.value===m.style)?m.style:'';
+      }
+    }
     if(m.type==='error'){sendQueue=[];setStatus('Error: '+m.error);}
   };
   ws.onclose=()=>{setOnline(false);setTimeout(connect,3000);};
@@ -160,6 +181,16 @@ function send(msg){
 document.getElementById('cbDouble').addEventListener('change',e=>{
   send({type:'set',doublePrint:e.target.checked});
 });
+function presetPicked(){
+  const v=document.getElementById('stylePreset').value;
+  if(v)document.getElementById('styleText').value=v;
+}
+function saveStyle(){
+  const v=document.getElementById('styleText').value.trim();
+  if(!v){setStatus('Describe a style first');return;}
+  send({type:'set',style:v});
+  setStatus('Style saved - next AI drawings will use it');
+}
 function printText(){
   const t=document.getElementById('txt').value;
   if(!t.trim()){setStatus('Nothing to print');return;}
