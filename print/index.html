@@ -18,10 +18,19 @@
   select{font-size:15px;padding:6px}
   #status{min-height:18px;font-size:14px}
   .on{color:#0a7}.off{color:#c33}
+  .tabbar{display:flex;gap:8px;margin-bottom:12px}
+  .tabbar button{flex:1;margin:0;background:#bbb}
+  .tabbar button.act{background:#333}
 </style></head><body>
 <h2>Print</h2>
-<div class="ver">v1.7.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
+<div class="ver">v1.8.0 &mdash; <span id="pname"></span> <span id="conn" class="off">connecting&hellip;</span></div>
 
+<div class="tabbar">
+  <button id="tb-print" class="act" onclick="showTab('print')">Print</button>
+  <button id="tb-cam" onclick="showTab('cam')">Camera</button>
+</div>
+
+<div id="pane-print">
 <div class="card">
   <b>Text</b><br><br>
   <textarea id="txt" placeholder="Type something to print..."></textarea><br>
@@ -47,22 +56,39 @@
 </div>
 
 <div class="card">
-  <b>Camera</b> <span style="font-size:12px;color:#888">(countdown, photo, 5s to cancel, then print)</span><br><br>
+  <button id="btnFeed" class="sec" onclick="send({type:'feed'})" disabled>Feed paper</button>
+</div>
+</div>
+
+<div id="pane-cam" style="display:none">
+<div class="card">
+  <b>Take a picture</b> <span style="font-size:12px;color:#888">(countdown, photo, 5s to cancel, then print)</span><br><br>
   <button id="btnSnap" onclick="snap('draw')" disabled>Photo &rarr; AI drawing</button>
   <button id="btnSnapD" onclick="snap('direct')" disabled>Photo &rarr; print photo</button>
-  <button id="btnCancel" onclick="send({type:'cancel'});hideCancel()"
-    style="display:none;background:#c33">Cancel print</button>
   <div id="shots" style="margin-top:8px"></div>
 </div>
 
 <div class="card">
+  <b>Print options</b><br><br>
   <label style="font-size:15px"><input type="checkbox" id="cbDouble"> Double print (one to keep)</label>
-  <button id="btnFeed" class="sec" onclick="send({type:'feed'})" disabled style="float:right">Feed paper</button>
-  <div style="clear:both"></div>
+  <div style="font-size:12px;color:#888;margin-top:4px">Applies to drawings and photos,
+  from every phone, until switched off. Double-tap the printer's button does 2 copies once.</div>
+</div>
+</div>
+
+<div class="card">
+  <button id="btnCancel" onclick="send({type:'cancel'});hideCancel()"
+    style="display:none;background:#c33">Cancel print</button>
   <div id="status"></div>
 </div>
 
 <script>
+function showTab(t){
+  document.getElementById('pane-print').style.display = t=='print'?'':'none';
+  document.getElementById('pane-cam').style.display = t=='cam'?'':'none';
+  document.getElementById('tb-print').className = t=='print'?'act':'';
+  document.getElementById('tb-cam').className = t=='cam'?'act':'';
+}
 const RELAY='wss://printer-relay.dbgh.workers.dev';
 const printerId=new URLSearchParams(location.search).get('printer')||'durrell-printer-01';
 document.getElementById('pname').textContent=printerId+' ';
