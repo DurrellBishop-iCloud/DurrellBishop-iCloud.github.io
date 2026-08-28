@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Radio</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 40px;
+    background: #14141a; color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif;
+    max-width: 480px; margin-inline: auto;
+  }
+  h1 { font-size: 28px; margin: 0 0 4px; font-weight: 600; }
+  #status { font-size: 14px; color: #9a9aa5; min-height: 20px; margin-bottom: 4px; }
+  #status .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+    background: #666; margin-right: 6px; }
+  #status.online .dot { background: #3ddc7a; }
+  #nowplaying { font-size: 14px; color: #c9c9d4; min-height: 20px; margin-bottom: 18px;
+    font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #stations { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  #stations button {
+    padding: 18px 10px; font-size: 16px; font-weight: 600; color: #eee;
+    background: #23232d; border: 2px solid #33333f; border-radius: 14px;
+    cursor: pointer; transition: background .15s, border-color .15s;
+  }
+  #stations button:active { background: #2e2e3a; }
+  #stations button.current { border-color: #3ddc7a; background: #1d2b22; }
+  #volrow { margin-top: 26px; display: flex; align-items: center; gap: 12px; }
+  #volrow label { font-size: 14px; color: #9a9aa5; width: 58px; }
+  #vol { flex: 1; accent-color: #3ddc7a; }
+  #volval { width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+  footer { margin-top: 36px; font-size: 12px; color: #55555f; }
+</style>
+</head>
+<body>
+<h1>Radio</h1>
+<div id="status"><span class="dot"></span><span id="statustext">connecting…</span></div>
+<div id="nowplaying"></div>
+<div id="stations"></div>
+<div id="volrow">
+  <label for="vol">Volume</label>
+  <input id="vol" type="range" min="0" max="21" step="1" value="12">
+  <span id="volval">12</span>
+</div>
+<footer>page v1.0.0 · relay <span id="relayver">–</span> · radio <span id="fwver">–</span></footer>
+
+<script>
+const PAGE_VERSION = '1.0.0';
+const RELAY = 'https://radio-relay.dbgh.workers.dev';
+const DEVICE = new URLSearchParams(location.search).get('device') || 'durrell-radio-01';
+
+// Edit this list to add or remove stations.
+const STATIONS = [
+  { name: 'Radio Paradise',  url: 'http://stream.radioparadise.com/mp3-192' },
+  { name: 'RP Mellow',       url: 'http://stream.radioparadise.com/mellow-192' },
+  { name: 'FIP',             url: 'https://icecast.radiofrance.fr/fip-midfi.mp3' },
+  { name: 'FIP Jazz',        url: 'https://icecast.radiofrance.fr/fipjazz-midfi.mp3' },
+  { name: 'NTS 1',           url: 'https://stream-relay-geo.ntslive.net/stream' },
+  { name: 'NTS 2',           url: 'https://stream-relay-geo.ntslive.net/stream2' },
+  { name: 'Groove Salad',    url: 'https://ice1.somafm.com/groovesalad-128-mp3' },
+  { name: 'KEXP',            url: 'https://kexp-mp3-128.streamguys1.com/kexp128.mp3' },
+  { name: 'BBC 6 Music',     url: 'http://as-hls-ww-live.akamaized.net/pool_904/live/ww/bbc_6music/bbc_6music.isml/bbc_6music-audio%3d96000.norewind.m3u8' },
+];
+
+const stationsEl = document.getElementById('stations');
+const statusEl = document.getElementById('status');
+const statusText = document.getElementById('statustext');
+const nowEl = document.getElementById('nowplaying');
+const volEl = document.getElementById('vol');
+const volVal = document.getElementById('volval');
+let currentUrl = '', volDragging = false;
+
+STATIONS.forEach(s => {
+  const b = document.createElement('button');
+  b.textContent = s.name;
+  b.onclick = () => setState({ name: s.name, url: s.url });
+  b.dataset.url = s.url;
+  stationsEl.appendChild(b);
+});
+
+volEl.oninput = () => { volVal.textContent = volEl.value; volDragging = true; };
+volEl.onchange = () => { volDragging = false; setState({ volume: +volEl.value }); };
+
+async function setState(patch) {
+  try {
+    const r = await fetch(`${RELAY}/set?device=${DEVICE}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    });
+    render(await r.json(), null);
+  } catch (e) { statusText.textContent = 'cloud unreachable'; }
+}
+
+function render(state, radio) {
+  if (state) {
+    currentUrl = state.url;
+    document.querySelectorAll('#stations button').forEach(b =>
+      b.classList.toggle('current', b.dataset.url === state.url));
+    if (!volDragging) { volEl.value = state.volume; volVal.textContent = state.volume; }
+  }
+  if (radio !== null && radio !== undefined) {
+    const fresh = radio.lastSeen && (Date.now() - radio.lastSeen) < 15000;
+    statusEl.classList.toggle('online', fresh);
+    statusText.textContent = fresh
+      ? `radio online${radio.playing ? ' · playing' : ' · silent'}`
+      : 'radio offline';
+    nowEl.textContent = fresh && radio.title ? radio.title : '';
+    document.getElementById('fwver').textContent = radio.fw ? 'v' + radio.fw : '–';
+  }
+}
+
+async function poll() {
+  try {
+    const r = await fetch(`${RELAY}/status?device=${DEVICE}`);
+    const j = await r.json();
+    document.getElementById('relayver').textContent = 'v' + (j.relay || '?');
+    render(j.state, j.radio || {});
+  } catch (e) { statusText.textContent = 'cloud unreachable'; statusEl.classList.remove('online'); }
+}
+poll();
+setInterval(poll, 3000);
+</script>
+</body>
+</html>
