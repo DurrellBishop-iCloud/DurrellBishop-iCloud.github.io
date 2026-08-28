@@ -68,10 +68,10 @@
   </div>
   <div id="setuplog"></div>
 </div>
-<footer>page v1.1.0 · relay <span id="relayver">–</span> · radio <span id="fwver">–</span></footer>
+<footer>page v1.1.1 · relay <span id="relayver">–</span> · radio <span id="fwver">–</span></footer>
 
 <script>
-const PAGE_VERSION = '1.1.0';
+const PAGE_VERSION = '1.1.1';
 const RELAY = 'https://radio-relay.dbgh.workers.dev';
 const DEVICE = new URLSearchParams(location.search).get('device') || 'durrell-radio-01';
 
@@ -85,7 +85,7 @@ const STATIONS = [
   { name: 'NTS 2',           url: 'https://stream-relay-geo.ntslive.net/stream2' },
   { name: 'Groove Salad',    url: 'https://ice1.somafm.com/groovesalad-128-mp3' },
   { name: 'KEXP',            url: 'https://kexp-mp3-128.streamguys1.com/kexp128.mp3' },
-  { name: 'BBC 6 Music',     url: 'http://as-hls-ww-live.akamaized.net/pool_904/live/ww/bbc_6music/bbc_6music.isml/bbc_6music-audio%3d96000.norewind.m3u8' },
+  { name: 'BBC 6 Music',     url: 'http://as-hls-ww-live.akamaized.net/pool_81827798/live/ww/bbc_6music/bbc_6music.isml/bbc_6music-audio%3d96000.norewind.m3u8' },
 ];
 
 const stationsEl = document.getElementById('stations');
