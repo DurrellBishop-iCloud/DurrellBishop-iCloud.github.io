@@ -28,6 +28,18 @@
   }
   #stations button:active { background: #2e2e3a; }
   #stations button.current { border-color: #3ddc7a; background: #1d2b22; }
+  #searchbox {
+    width: 100%; margin-top: 18px; padding: 13px 14px; font-size: 16px;
+    border-radius: 12px; border: 1px solid #33333f; background: #23232d;
+    color: #eee; box-sizing: border-box;
+  }
+  #results div {
+    padding: 10px 6px; cursor: pointer; border-bottom: 1px solid #23232d;
+    font-size: 15px;
+  }
+  #results div:hover { background: #1d1d25; }
+  #results .meta { color: #77777f; font-size: 13px; margin-left: 6px; }
+  #results div.current { color: #3ddc7a; }
   #volrow { margin-top: 26px; display: flex; align-items: center; gap: 12px; }
   #volrow label { font-size: 14px; color: #9a9aa5; width: 58px; }
   #vol { flex: 1; accent-color: #3ddc7a; }
@@ -43,6 +55,12 @@
   #setup button { cursor: pointer; font-weight: 600; }
   #setup button.go { background: #1d2b22; border-color: #3ddc7a; }
   #setupnets div { padding: 7px 4px; cursor: pointer; color: #9ab4dd; font-size: 15px; }
+  #savedwifis { margin-bottom: 10px; }
+  #savedwifis .row { display: flex; align-items: center; gap: 8px; padding: 6px 2px;
+    font-size: 15px; color: #c9c9d4; }
+  #savedwifis .row span.name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+  #savedwifis .row button { width: auto; margin: 0; padding: 5px 10px; font-size: 13px; }
+  #savedwifis .hint { font-size: 12px; color: #77777f; margin: 2px 0 6px; }
   #setuplog { font-size: 13px; color: #9a9aa5; white-space: pre-wrap; min-height: 18px; margin-top: 6px; }
   .hidden { display: none; }
 </style>
@@ -52,6 +70,8 @@
 <div id="status"><span class="dot"></span><span id="statustext">connecting…</span></div>
 <div id="nowplaying"></div>
 <div id="stations"></div>
+<input id="searchbox" placeholder="Search any station in the world…" autocomplete="off">
+<div id="results"></div>
 <div id="volrow">
   <label for="vol">Volume</label>
   <input id="vol" type="range" min="0" max="21" step="1" value="12">
@@ -61,6 +81,7 @@
   <h2>WiFi setup — plug the radio into this computer's USB</h2>
   <button id="connectbtn">Connect to radio over USB</button>
   <div id="setupform" class="hidden">
+    <div id="savedwifis"></div>
     <div id="setupnets"></div>
     <input id="setupssid" placeholder="Network name">
     <input id="setuppass" type="password" placeholder="Password">
@@ -68,10 +89,10 @@
   </div>
   <div id="setuplog"></div>
 </div>
-<footer>page v1.1.1 · relay <span id="relayver">–</span> · radio <span id="fwver">–</span></footer>
+<footer>page v1.2.0 · relay <span id="relayver">–</span> · radio <span id="fwver">–</span></footer>
 
 <script>
-const PAGE_VERSION = '1.1.1';
+const PAGE_VERSION = '1.2.0';
 const RELAY = 'https://radio-relay.dbgh.workers.dev';
 const DEVICE = new URLSearchParams(location.search).get('device') || 'durrell-radio-01';
 
@@ -147,6 +168,47 @@ async function poll() {
 poll();
 setInterval(poll, 3000);
 
+// ---- station search (Radio Browser, ~50k stations) ----
+const RB_SERVERS = ['https://de2.api.radio-browser.info', 'https://de1.api.radio-browser.info'];
+const searchBox = document.getElementById('searchbox');
+const resultsEl = document.getElementById('results');
+let searchTimer = null;
+
+searchBox.oninput = () => {
+  clearTimeout(searchTimer);
+  const q = searchBox.value.trim();
+  if (q.length < 2) { resultsEl.innerHTML = ''; return; }
+  searchTimer = setTimeout(() => doSearch(q), 400);
+};
+
+async function doSearch(q) {
+  resultsEl.innerHTML = '<div class="meta">searching…</div>';
+  let list = null;
+  for (const s of RB_SERVERS) {
+    try {
+      const r = await fetch(`${s}/json/stations/search?name=${encodeURIComponent(q)}&limit=15&hidebroken=true&order=votes&reverse=true`);
+      if (r.ok) { list = await r.json(); break; }
+    } catch (e) { /* try next mirror */ }
+  }
+  if (searchBox.value.trim() !== q) return;   // stale reply
+  if (!list) { resultsEl.innerHTML = '<div class="meta">search unavailable right now</div>'; return; }
+  if (!list.length) { resultsEl.innerHTML = '<div class="meta">nothing found</div>'; return; }
+  resultsEl.innerHTML = '';
+  list.forEach(st => {
+    const name = (st.name || '').trim().slice(0, 60);
+    const url = st.url_resolved || st.url;
+    if (!name || !url) return;
+    const d = document.createElement('div');
+    d.innerHTML = `${name.replace(/</g, '&lt;')}<span class="meta">${st.countrycode || ''} · ${(st.codec || '?').toLowerCase()} ${st.bitrate || ''}k</span>`;
+    d.onclick = () => {
+      setState({ name, url });
+      [...resultsEl.children].forEach(c => c.classList.remove('current'));
+      d.classList.add('current');
+    };
+    resultsEl.appendChild(d);
+  });
+}
+
 // ---- WiFi setup over USB (Web Serial, Chrome / Edge only) ----
 const setupLog = document.getElementById('setuplog');
 const connectBtn = document.getElementById('connectbtn');
@@ -210,6 +272,7 @@ connectBtn.onclick = async () => {
     document.getElementById('setupform').classList.remove('hidden');
     connectBtn.classList.add('hidden');
     slog(`Radio v${st.fw}${st.wifi ? ` - on "${st.ssid}"` : ' - not on WiFi'} - scanning networks...`);
+    refreshSaved();
     const sc = await sendCmd({ cmd: 'scan' }, 15000);
     const netsEl = document.getElementById('setupnets');
     if (sc && sc.networks && sc.networks.length) {
@@ -229,6 +292,46 @@ connectBtn.onclick = async () => {
   }
 };
 
+function renderSaved(nets, connected) {
+  const el = document.getElementById('savedwifis');
+  el.innerHTML = '';
+  if (!nets || !nets.length) return;
+  const hint = document.createElement('div');
+  hint.className = 'hint';
+  hint.textContent = 'Saved networks - tried top-down until one connects:';
+  el.appendChild(hint);
+  nets.forEach((ssid, i) => {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const name = document.createElement('span');
+    name.className = 'name';
+    name.textContent = `${i + 1}. ${ssid}` + (ssid === connected ? '  ✓' : '');
+    row.appendChild(name);
+    if (i > 0) {
+      const up = document.createElement('button');
+      up.textContent = 'Top';
+      up.onclick = async () => {
+        const r = await sendCmd({ cmd: 'top', ssid });
+        if (r) renderSaved(r.nets, connected);
+      };
+      row.appendChild(up);
+    }
+    const del = document.createElement('button');
+    del.textContent = '×';
+    del.onclick = async () => {
+      const r = await sendCmd({ cmd: 'remove', ssid });
+      if (r) renderSaved(r.nets, connected);
+    };
+    row.appendChild(del);
+    el.appendChild(row);
+  });
+}
+
+async function refreshSaved() {
+  const r = await sendCmd({ cmd: 'nets' });
+  if (r) renderSaved(r.nets, r.connected);
+}
+
 document.getElementById('sendwifi').onclick = async () => {
   const ssid = document.getElementById('setupssid').value.trim();
   const pass = document.getElementById('setuppass').value;
@@ -238,6 +341,7 @@ document.getElementById('sendwifi').onclick = async () => {
   if (r && r.ok) slog(`Joined! Radio is on ${r.ip}. You can unplug it now.`);
   else if (r) slog('Did not join: ' + (r.error || 'unknown') + ' - check the password.');
   else slog('No reply from the radio - try again.');
+  refreshSaved();
 };
 </script>
 </body>
