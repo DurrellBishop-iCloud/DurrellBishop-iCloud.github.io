@@ -67,6 +67,15 @@
 </head>
 <body>
 <h1>Radio</h1>
+<div id="devices"></div>
+<style>
+  #devices { display: flex; gap: 8px; margin: 10px 0 6px; }
+  #devices button {
+    padding: 7px 16px; font-size: 14px; font-weight: 600; color: #9a9aa5;
+    background: #1d1d25; border: 1px solid #33333f; border-radius: 999px; cursor: pointer;
+  }
+  #devices button.current { color: #3ddc7a; border-color: #3ddc7a; background: #1d2b22; }
+</style>
 <div id="status"><span class="dot"></span><span id="statustext">connecting…</span></div>
 <div id="nowplaying"></div>
 <div id="stations"></div>
@@ -89,12 +98,26 @@
   </div>
   <div id="setuplog"></div>
 </div>
-<footer>page v1.2.0 · relay <span id="relayver">–</span> · radio <span id="fwver">–</span></footer>
+<footer>page v1.3.0 · relay <span id="relayver">–</span> · radio <span id="fwver">–</span></footer>
 
 <script>
-const PAGE_VERSION = '1.2.0';
+const PAGE_VERSION = '1.3.0';
 const RELAY = 'https://radio-relay.dbgh.workers.dev';
 const DEVICE = new URLSearchParams(location.search).get('device') || 'durrell-radio-01';
+
+// Your radios - edit labels or add more here.
+const DEVICES = [
+  { id: 'durrell-radio-01', label: 'Radio 1 · S3' },
+  { id: 'durrell-radio-02', label: 'Radio 2 · C5' },
+];
+const devicesEl = document.getElementById('devices');
+DEVICES.forEach(d => {
+  const b = document.createElement('button');
+  b.textContent = d.label;
+  b.classList.toggle('current', d.id === DEVICE);
+  b.onclick = () => { if (d.id !== DEVICE) location.search = '?device=' + d.id; };
+  devicesEl.appendChild(b);
+});
 
 // Edit this list to add or remove stations.
 const STATIONS = [
