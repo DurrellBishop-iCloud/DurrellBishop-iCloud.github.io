@@ -98,17 +98,17 @@
   </div>
   <div id="setuplog"></div>
 </div>
-<footer>page v1.4.0 · relay <span id="relayver">–</span> · radio <span id="fwver">–</span></footer>
+<footer>page v1.4.1 · relay <span id="relayver">–</span> · radio <span id="fwver">–</span></footer>
 
 <script>
-const PAGE_VERSION = '1.4.0';
+const PAGE_VERSION = '1.4.1';
 const RELAY = 'https://radio-relay.dbgh.workers.dev';
 const DEVICE = new URLSearchParams(location.search).get('device') || 'durrell-radio-01';
 
 // Your radios - edit labels or add more here.
 const DEVICES = [
   { id: 'durrell-radio-01', label: 'Radio 1 · S3' },
-  { id: 'durrell-radio-02', label: 'Radio 2 · C5' },
+  { id: 'durrell-radio-02', label: 'Radio 2 · S3' },
   { id: 'durrell-radio-03', label: 'Radio 3 · S3' },
 ];
 const devicesEl = document.getElementById('devices');
